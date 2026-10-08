@@ -16,6 +16,8 @@ test("l’envoi d’une facture valide sa transaction après la mise à jour", (
     assert.ok(route.indexOf('query("BEGIN")') < route.indexOf("sendDocumentEmail"));
     assert.ok(route.indexOf("sendDocumentEmail") < route.indexOf('query("COMMIT")'));
     assert.match(route, /query\("ROLLBACK"\)/);
+    assert.match(route, /error\?\.code === "SMTP_NOT_CONFIGURED"/);
+    assert.match(route, /response\.status\(503\)/);
 });
 
 test("le Comptable reste en consultation sur la comptabilité et les achats", () => {

@@ -26,3 +26,15 @@ test("une archive légale d’avoir contient un PDF, un UBL CreditNote et leurs 
     assert.equal(archive.pdfSha256, crypto.createHash("sha256").update(archive.pdfData).digest("hex"));
     assert.equal(archive.legalSnapshot.document.sourceInvoiceNumber, "FAC-2026-000001");
 });
+
+test("une date de facture native PostgreSQL reste imprimable dans l’avoir", async () => {
+    const document = {
+        documentType: "credit", documentNumber: "AVO-2026-000002", sourceInvoiceId: 8, sourceInvoiceNumber: "FAC-2026-000002",
+        sourceInvoiceDate: new Date("2026-01-10T00:00:00.000Z"), clientId: "client-1", customerType: "Professionnel", customerName: "Client Test",
+        customerAddress: "2 rue du Client, 69001 Lyon", issueDate: "2026-01-15", vatRegime: "standard",
+        issuerTaxNumber: profile.taxNumber, legalData: { billingAddress: "2 rue du Client, 69001 Lyon" },
+        lines: [{ description: "Avoir sur facture", quantity: 1, unit: "forfait", unitPrice: -10, vatRate: 20 }], notes: "Correction", financialData: {}
+    };
+    const archive = await buildBillingLegalArchive(document, { profile });
+    assert.equal(archive.pdfData.subarray(0, 4).toString("ascii"), "%PDF");
+});

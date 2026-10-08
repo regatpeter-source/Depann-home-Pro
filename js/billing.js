@@ -1,5 +1,5 @@
 import { ROUTES } from "./config.js?v=116";
-import { getSearchableClients } from "./clients.js?v=176";
+import { getSearchableClients } from "./clients.js?v=178";
 import { addClientActivityByName } from "./client-sync.js?v=132";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -9,6 +9,7 @@ import { openDocumentDeliveryChoice } from "./document-delivery.js?v=2";
 import { pageSizeOptions, paginateItems, renderBusinessPagination } from "./pagination.js?v=1";
 import { renderLivePdfPreview } from "./pdf-live-preview.js?v=2";
 import { renderBusinessSuite } from "./business-suite.js?v=2";
+import { markDesktopWorkspaceDraftSaved } from "./desktop-workspace.js?v=5";
 
 const CUSTOMER_TYPES = ["Particulier", "Professionnel", "Magasin", "Autre"];
 const PAYMENT_METHODS = ["Chèque", "Espèces", "Virement", "Carte bancaire"];
@@ -331,6 +332,7 @@ function renderProfile(panel, options = {}) {
             submit.disabled = false;
             return;
         }
+        markDesktopWorkspaceDraftSaved();
         renderBilling(options.onlyType ? { profile: true, templateSection: options.onlyType, integratedOnly: true, onTemplateRendered: options.onTemplateRendered } : {});
     });
     if (options.onlyType === "quote") renderQuoteTemplateSettings(panel, profile, true, options.onTemplateRendered, true);
@@ -587,6 +589,7 @@ function renderDocumentEditor(panel) {
         const result = await apiRequest(isEditing ? `/api/billing/documents/${encodeURIComponent(document.id)}` : "/api/billing/documents", { method: isEditing ? "PUT" : "POST", body: JSON.stringify(payload) });
         if (!result.ok) { message.textContent = result.message || "Impossible d’enregistrer le document."; message.classList.add("error"); return; }
         const savedDocumentNumber = result.data?.documentNumber || document.documentNumber || payload.documentNumber;
+        markDesktopWorkspaceDraftSaved();
         if (!isEditing) addClientActivityByName(payload.customerName, {
             type: payload.documentType,
             label: `${DOCUMENT_TYPES[payload.documentType]} créé`,
@@ -621,10 +624,11 @@ function renderDocumentEditor(panel) {
 function renderRevenueAssignmentField(document) {
     if (document.documentType !== "invoice") return "";
     const mobileRoles = new Set(["mobile_admin", "team_lead", "technician"]);
-    if (mobileRoles.has(currentUser?.role)) {
-        return `<label>Chiffre d’affaires<input type="text" value="Attribué automatiquement à ${escapeHtml(currentUser.fullName || currentUser.username || "ce poste mobile")}" disabled><small>L’attribution sera figée à l’émission.</small></label>`;
+    const body = globalThis.document.body;
+    if (mobileRoles.has(body.dataset.role)) {
+        return `<label>Chiffre d’affaires<input type="text" value="Attribué automatiquement à ${escapeHtml(body.dataset.userName || "ce poste mobile")}" disabled><small>L’attribution sera figée à l’émission.</small></label>`;
     }
-    if (!document.body.classList.contains("desktop-device")) {
+    if (!body.classList.contains("desktop-device")) {
         return '<p class="billing-quote-reference">CA attribué automatiquement depuis l’intervention associée.</p>';
     }
     const selectedId = String(document.revenueAssigneeId || "");
@@ -734,6 +738,7 @@ async function issueBillingInvoice(document, clients = [], form = null) {
     }
     const result = await apiRequest(`/api/billing/documents/${encodeURIComponent(document.id)}/issue`, { method: "POST", body: "{}" });
     if (!result.ok) return alert(result.message || "Émission définitive impossible.");
+    markDesktopWorkspaceDraftSaved();
     const documentNumber = result.data?.documentNumber || document.documentNumber;
     const client = clients.find(item => String(item.id) === String(document.clientId || "")) || clients.find(item => normalizeText(item.name) === normalizeText(document.customerName));
     addClientActivityByName(document.customerName, { type: "invoice", label: "Facture émise", detail: documentNumber, documentId: document.id, appointmentId: document.appointmentId });

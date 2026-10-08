@@ -81,6 +81,19 @@ test("production and sandbox callback retries are separated by the intake flag",
     assert.match(sandboxSource, /sandboxOnly: true/);
 });
 
+test("signed sandbox callbacks bypass session authentication without exposing other sandbox routes", () => {
+    const source = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+    assert.match(source, /request\.method === "POST" && request\.path\.startsWith\("\/external-callback\/"\)/);
+    assert.match(source, /if \(isPublicPartnerSandboxCallback\(request\)\) return next\(\);\s*return requireAuthentication/s);
+    assert.match(source, /if \(isPublicPartnerSandboxCallback\(request\)\) return next\(\);\s*if \(request\.method === "GET"/s);
+});
+
+test("sandbox status transitions preserve the intake sandbox flag in public responses", () => {
+    const source = readFileSync(new URL("../server/partner-missions.js", import.meta.url), "utf8");
+    assert.match(source, /intake\.is_sandbox AS \"isSandbox\"/);
+    assert.match(source, /updated = \{ \.\.\.rows\[0\], isSandbox: current\.rows\[0\]\.isSandbox \}/);
+});
+
 test("les callbacks sortants sont réclamés atomiquement avec un bail récupérable", () => {
     const missionsSource = readFileSync(new URL("../server/partner-missions.js", import.meta.url), "utf8");
     assert.match(missionsSource, /FOR UPDATE OF outbox SKIP LOCKED/g);

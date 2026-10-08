@@ -45,3 +45,12 @@ test("la recherche et les événements ne contournent pas les droits des Paramè
     assert.match(navigation, /async function openDocumentTemplateSettings\(type\) \{\s*if \(!canAccessSettingsSection\("documents"\)\) return renderSettings\(\)/);
     assert.match(billing, /function requireBillingAdministration[\s\S]*isCompanyAdministrator\(request\)/);
 });
+
+test("chaque carte Paramètres possède une icône SVG définie et un fallback", () => {
+    const navigation = readFileSync(new URL("../js/navigation.js", import.meta.url), "utf8");
+    const icons = navigation.slice(navigation.indexOf("function settingsIcon"), navigation.indexOf("async function renderReportTemplateSettings"));
+    for (const icon of ["subscription", "database", "company", "history", "document", "network", "support", "users", "security", "group", "creator", "appearance", "import", "help"]) {
+        assert.match(icons, new RegExp(`${icon}: '<`), icon);
+    }
+    assert.match(icons, /paths\[icon\] \|\| paths\.help/);
+});

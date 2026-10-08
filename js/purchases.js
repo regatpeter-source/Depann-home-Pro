@@ -1,9 +1,10 @@
 import { ROUTES } from "./config.js?v=111";
-import { getSearchableClients } from "./clients.js?v=176";
+import { getSearchableClients } from "./clients.js?v=178";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { pageSizeOptions, paginateItems, renderBusinessPagination } from "./pagination.js?v=1";
+import { markDesktopWorkspaceDraftSaved } from "./desktop-workspace.js?v=5";
 
 const PURCHASE_CATEGORIES = ["Matériel", "Consommables", "Loyer", "Véhicule", "Outillage", "Sous-traitance", "Services", "Assurances", "Autre"];
 let purchases = [];
@@ -124,6 +125,7 @@ function renderPurchaseEditor(panel) {
         payload.clientName = payload.clientId ? (clients.find(client => client.id === payload.clientId)?.name || purchase.clientName || "") : "";
         const result = await apiRequest(isEditing ? `/api/purchases/${encodeURIComponent(purchase.id)}` : "/api/purchases", { method: isEditing ? "PUT" : "POST", body: JSON.stringify(payload) });
         if (!result.ok) { message.textContent = result.message || "Impossible d’enregistrer l’achat."; message.classList.add("error"); return; }
+        markDesktopWorkspaceDraftSaved();
         activePurchase = null;
         renderPurchases(presentation);
     });

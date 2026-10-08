@@ -1,5 +1,5 @@
 import { APP_VERSION, ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=139";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=246";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=247";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=175";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=222";
 import { renderAccounting } from "./accounting.js?v=33";
@@ -14,8 +14,8 @@ import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partn
 import { renderDataImportTool } from "./data-imports.js?v=5";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=68";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
-import { getSearchableClients, refreshClientDirectoryAfterSynchronization, renderClients } from "./clients.js?v=176";
-import { initializeDesktopWorkspace } from "./desktop-workspace.js?v=4";
+import { getSearchableClients, refreshClientDirectoryAfterSynchronization, renderClients } from "./clients.js?v=178";
+import { initializeDesktopWorkspace } from "./desktop-workspace.js?v=5";
 import { synchronizeClients } from "./client-sync.js?v=132";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=124";
 import { getContextualSearchResults } from "./search.js?v=79";
@@ -2276,6 +2276,10 @@ function createSettingsNavigationCard(title, description, icon, onClick) {
 
 function settingsIcon(icon) {
     const paths = {
+        subscription: '<path d="M4 7h16v12H4z"/><path d="M4 10h16M8 15h3"/>',
+        database: '<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/>',
+        company: '<path d="M4 21V8l8-5 8 5v13M8 21v-5h8v5M8 10h2M14 10h2"/>',
+        history: '<path d="M4 12a8 8 0 108-8 8.5 8.5 0 00-6 2.5L4 8"/><path d="M4 4v4h4M12 7v5l3 2"/>',
         document: '<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v5h5M10 12h5M10 16h5"/>',
         partners: '<path d="M8 12l3 3 5-6"/><path d="M4 12a8 8 0 0114-5M20 12a8 8 0 01-14 5"/>',
         network: '<circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4a12 12 0 010 16M12 4a12 12 0 000 16"/>',
@@ -2285,7 +2289,8 @@ function settingsIcon(icon) {
         creator: '<circle cx="12" cy="8" r="3"/><path d="M5 21c.5-4.2 3.1-6.5 7-6.5s6.5 2.3 7 6.5M18 5l1 1 2-1M18 5l1-2"/>',
         appearance: '<circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16"/>',
         import: '<path d="M12 3v12M7 10l5 5 5-5M5 20h14"/>',
-        support: '<path d="M4 13a8 8 0 0116 0v5M4 13h3v6H5a1 1 0 01-1-1zM20 13h-3v6h2a1 1 0 001-1zM17 19c0 2-2 2-5 2"/>'
+        support: '<path d="M4 13a8 8 0 0116 0v5M4 13h3v6H5a1 1 0 01-1-1zM20 13h-3v6h2a1 1 0 001-1zM17 19c0 2-2 2-5 2"/>',
+        help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 015 0c0 2-2.5 2-2.5 4M12 17h.01"/>'
     };
     return `<svg viewBox="0 0 24 24" focusable="false">${paths[icon] || paths.help}</svg>`;
 }

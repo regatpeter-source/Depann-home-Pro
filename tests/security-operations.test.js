@@ -110,6 +110,18 @@ test("les migrations de modules restent applicables avant la création de leurs 
     assert.match(runner, /83cc48afc5c221d621cc6cc20971d53998dbfa9e8f0924feea2eb807681174c2/);
 });
 
+test("le démarrage initialise les tables métier avant les migrations et l’assistance après le support", () => {
+    const application = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+    const start = application.slice(application.indexOf("async function start()"), application.indexOf("start().catch"));
+    const migrations = start.indexOf("await runMigrations()");
+    for (const initializer of [
+        "initializeSupport", "initializeCreatorAssistance", "initializeBilling", "initializeAccounting",
+        "initializePurchases", "initializeCalendar", "initializeTechnicalReports"
+    ]) assert.ok(start.indexOf(`await ${initializer}()`) < migrations, initializer);
+    assert.ok(start.indexOf("await initializeSupport()") < start.indexOf("await initializeCreatorAssistance()"));
+    assert.ok(migrations < start.indexOf("await initializeHealthDashboard()"));
+});
+
 test("la migration de conservation restaure les missions masquées et interdit une nouvelle suppression logique", () => {
     const migration = readFileSync(new URL("../database/migrations/0003_retain_partner_missions.sql", import.meta.url), "utf8");
     assert.match(migration, /UPDATE depannhome_partner_missions[\s\S]*SET deleted_at = NULL/);

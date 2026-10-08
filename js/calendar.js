@@ -1,7 +1,8 @@
 import { ROUTES } from "./config.js?v=134";
 import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=222";
-import { getSearchableClients } from "./clients.js?v=176";
+import { getSearchableClients } from "./clients.js?v=178";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=132";
+import { markDesktopWorkspaceDraftSaved } from "./desktop-workspace.js?v=5";
 import { renderClientMessages } from "./messages.js?v=107";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=68";
 import { resetSelection } from "./state.js?v=44";
@@ -811,6 +812,7 @@ function renderEventForm(panel) {
             button.disabled = false;
             return;
         }
+        markDesktopWorkspaceDraftSaved();
         if (!isEditing && payload.clientName) addClientActivityByName(payload.clientName, {
             type: "appointment",
             label: (result.data?.count || payload.dates?.length || 1) > 1 ? `${result.data?.count || payload.dates.length} interventions créées` : "Intervention créée",

@@ -52,3 +52,10 @@ test("une synchronisation silencieuse actualise les résultats sans reconstruire
     assert.match(clients, /clientDirectorySearchActive = true/);
     assert.match(clients, /clientDirectorySearchActive = false/);
 });
+
+test("un nouveau client est synchronisé avant le chargement de son historique serveur", () => {
+    const form = clients.slice(clients.indexOf("function renderClientForm"), clients.indexOf("function renderClientDirectory"));
+    const synchronize = form.indexOf("await synchronizeClients()");
+    const detail = form.indexOf("renderClients({ selectedId: nextClient.id");
+    assert.ok(synchronize >= 0 && detail > synchronize);
+});

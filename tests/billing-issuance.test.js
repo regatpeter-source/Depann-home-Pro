@@ -15,6 +15,10 @@ test("les brouillons de facture reçoivent une référence interne contrôlée p
     assert.match(billing, /const status = document\.documentType === "invoice" \? "draft" : document\.status/);
     assert.match(client, /Attribué automatiquement à l’émission/);
     assert.match(client, /result\.data\?\.documentNumber/);
+    assert.match(client, /const body = globalThis\.document\.body/);
+    assert.match(client, /mobileRoles\.has\(body\.dataset\.role\)/);
+    assert.match(client, /body\.classList\.contains\("desktop-device"\)/);
+    assert.doesNotMatch(client, /currentUser\?\.role/);
 });
 
 test("l’émission est autorisée et contrôlée par intervention, transactionnelle, idempotente et archive UBL/PDF", () => {

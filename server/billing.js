@@ -730,6 +730,9 @@ export function registerBillingRoutes(app, requireAuthentication) {
             await database.query("COMMIT");
         } catch (error) {
             await database.query("ROLLBACK");
+            if (error?.code === "SMTP_NOT_CONFIGURED") {
+                return response.status(503).json({ message: "L’envoi d’e-mails n’est pas configuré. Renseignez Brevo SMTP dans les paramètres du serveur." });
+            }
             throw error;
         } finally {
             database.release();
@@ -1640,7 +1643,12 @@ export function createBillingPdf(document, profile) {
         const line = (y, color = template.separatorColor) => pdf.moveTo(margin, y).lineTo(margin + contentWidth, y).lineWidth(1).strokeColor(color).stroke();
         const text = (value, x, y, width, options = {}) => pdf.fillColor(options.color || template.primaryColor).font(options.bold ? boldFont : template.font).fontSize(options.size || 9).text(String(value || ""), x, y, { width, ...options });
         const formatMoney = value => new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(Number(value) || 0);
-        const formatDate = value => value ? new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)) : "Non renseignée";
+        const formatDate = value => {
+            if (!value) return "Non renseignée";
+            const textValue = String(value);
+            const parsed = value instanceof Date ? value : /^\d{4}-\d{2}-\d{2}$/.test(textValue) ? new Date(`${textValue}T12:00:00`) : new Date(textValue);
+            return Number.isNaN(parsed.getTime()) ? "Non renseignée" : new Intl.DateTimeFormat("fr-FR").format(parsed);
+        };
         const financialData = document.financialData && typeof document.financialData === "object" ? document.financialData : {};
         const vatRegime = normalizeVatRegime(document.vatRegime || profile.vatRegime);
         const isVatFranchise = vatRegime === "franchise";

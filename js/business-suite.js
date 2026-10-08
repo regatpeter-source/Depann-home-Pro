@@ -1,6 +1,7 @@
 import { ROUTES } from "./config.js?v=139";
 import { getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
+import { markDesktopWorkspaceDraftSaved } from "./desktop-workspace.js?v=5";
 
 let context = { clients: [], documents: [], events: [], purchases: [] };
 let activeTab = "overview";
@@ -49,6 +50,7 @@ async function renderPortal(container) {
         const data = new FormData(form), result = container.querySelector("[data-portal-result]");
         try {
             const created = await api("/api/customer-portal/links", { method: "POST", body: { clientId: data.get("clientId"), documentIds: data.getAll("documentIds").map(Number), durationDays: Number(data.get("durationDays")), allowQuoteDecision: data.get("allowQuoteDecision") === "on", label: data.get("label") } });
+            markDesktopWorkspaceDraftSaved();
             result.innerHTML = `<div class=business-success><strong>Lien créé</strong><input readonly value="${escapeHtml(created.url)}"><button type=button data-copy-link>Copier le lien</button><p>Le lien brut n’est affiché qu’ici ; seul son condensat sécurisé est conservé.</p></div>`;
             result.querySelector("[data-copy-link]").addEventListener("click", () => navigator.clipboard?.writeText(created.url));
             await loadPortalRecords(container, client.value);
@@ -83,7 +85,7 @@ async function loadAssets(container, clientId) {
         bindJsonForm(workspace.querySelector("[data-site-form]"), `/api/business-suite/clients/${encodeURIComponent(clientId)}/sites`, () => loadAssets(container, clientId));
         bindJsonForm(workspace.querySelector("[data-equipment-form]"), `/api/business-suite/clients/${encodeURIComponent(clientId)}/equipment`, () => loadAssets(container, clientId));
         bindJsonForm(workspace.querySelector("[data-contract-form]"), `/api/business-suite/clients/${encodeURIComponent(clientId)}/contracts`, () => loadAssets(container, clientId));
-        workspace.querySelector("[data-event-assets]").addEventListener("submit", async event => { event.preventDefault(); const values=Object.fromEntries(new FormData(event.currentTarget)); await api(`/api/business-suite/events/${values.eventId}/assets`,{method:"PATCH",body:{siteId:values.siteId||null,equipmentId:values.equipmentId||null,contractId:values.contractId||null}}); alert("Intervention reliée au parc client."); });
+        workspace.querySelector("[data-event-assets]").addEventListener("submit", async event => { event.preventDefault(); const values=Object.fromEntries(new FormData(event.currentTarget)); await api(`/api/business-suite/events/${values.eventId}/assets`,{method:"PATCH",body:{siteId:values.siteId||null,equipmentId:values.equipmentId||null,contractId:values.contractId||null}}); markDesktopWorkspaceDraftSaved(); alert("Intervention reliée au parc client."); });
         workspace.querySelectorAll("[data-delete-resource]").forEach(button => button.addEventListener("click", async () => { if (!confirm("Supprimer cet élément ?")) return; await api(`/api/business-suite/${button.dataset.deleteResource}/${button.dataset.id}`, { method: "DELETE" }); await loadAssets(container, clientId); }));
     } catch (error) { workspace.innerHTML = `<p class=error>${escapeHtml(error.message)}</p>`; }
 }
@@ -119,14 +121,14 @@ function renderProfitability(container) {
         try { const { profitability: item } = await api(`/api/business-suite/events/${select.value}/profitability`); result.innerHTML = `<div class=business-metrics><article><strong>${moneyLabel(item.revenueHt)}</strong><span>CA HT</span></article><article><strong>${moneyLabel(item.laborCost)}</strong><span>Main-d’œuvre (${numberLabel(item.laborHours)} h)</span></article><article><strong>${moneyLabel(item.partsCost + item.purchasesCost)}</strong><span>Pièces et achats</span></article><article><strong class="${item.margin < 0 ? "negative" : "positive"}">${moneyLabel(item.margin)}</strong><span>Marge${item.marginRate === null ? "" : ` · ${numberLabel(item.marginRate)} %`}</span></article></div>`; } catch (error) { result.innerHTML = `<p class=error>${escapeHtml(error.message)}</p>`; }
     };
     select.addEventListener("change", load); void load();
-    container.querySelector("[data-purchase-allocation]").addEventListener("submit", async event => { event.preventDefault(); const data=new FormData(event.currentTarget); await api(`/api/business-suite/purchases/${data.get("purchaseId")}/event`,{method:"PATCH",body:{eventId:Number(data.get("eventId"))}}); if(String(select.value)===String(data.get("eventId"))) await load(); });
-    container.querySelector("[data-labor-cost]")?.addEventListener("submit", async event => { event.preventDefault(); const data=new FormData(event.currentTarget); await api(`/api/business-suite/labor-costs/${encodeURIComponent(data.get("role"))}`,{method:"PUT",body:{hourlyCost:Number(data.get("hourlyCost"))}}); if(select.value) await load(); });
+    container.querySelector("[data-purchase-allocation]").addEventListener("submit", async event => { event.preventDefault(); const data=new FormData(event.currentTarget); await api(`/api/business-suite/purchases/${data.get("purchaseId")}/event`,{method:"PATCH",body:{eventId:Number(data.get("eventId"))}}); markDesktopWorkspaceDraftSaved(); if(String(select.value)===String(data.get("eventId"))) await load(); });
+    container.querySelector("[data-labor-cost]")?.addEventListener("submit", async event => { event.preventDefault(); const data=new FormData(event.currentTarget); await api(`/api/business-suite/labor-costs/${encodeURIComponent(data.get("role"))}`,{method:"PUT",body:{hourlyCost:Number(data.get("hourlyCost"))}}); markDesktopWorkspaceDraftSaved(); if(select.value) await load(); });
 }
 
 function bindJsonForm(form, url, complete) {
     form?.addEventListener("submit", async event => {
         event.preventDefault(); const button = form.querySelector("button[type=submit]"); button.disabled = true;
-        try { await api(url, { method: "POST", body: Object.fromEntries(new FormData(form)) }); await complete(); }
+        try { await api(url, { method: "POST", body: Object.fromEntries(new FormData(form)) }); markDesktopWorkspaceDraftSaved(); await complete(); }
         catch (error) { alert(error.message); button.disabled = false; }
     });
 }

@@ -34,6 +34,13 @@ export function initializeDesktopWorkspace(options = {}) {
     return true;
 }
 
+export function markDesktopWorkspaceDraftSaved() {
+    if (!activeKey || !drafts.has(activeKey)) return false;
+    drafts.delete(activeKey);
+    renderWorkspace();
+    return true;
+}
+
 function bindWorkspace(workspace) {
     workspace.addEventListener("click", event => {
         const tab = event.target.closest("[data-workspace-tab]");

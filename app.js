@@ -221,7 +221,12 @@ app.use("/api/partner-dialogue", (request, response, next) => {
 app.use("/api/official-partners", requireAuthentication, requireOrganizationFeature("connectors"));
 app.use("/api/partner-missions/intakes", requireAuthentication, requireOrganizationFeature("connectors"));
 const requirePartnerSandboxFeature = requireOrganizationFeature("connectors");
-app.use("/api/partner-sandbox", requireAuthentication, (request, response, next) => {
+const isPublicPartnerSandboxCallback = request => request.method === "POST" && request.path.startsWith("/external-callback/");
+app.use("/api/partner-sandbox", (request, response, next) => {
+	if (isPublicPartnerSandboxCallback(request)) return next();
+	return requireAuthentication(request, response, next);
+}, (request, response, next) => {
+	if (isPublicPartnerSandboxCallback(request)) return next();
 	if (request.method === "GET" && request.path === "/") return next();
 	return requirePartnerSandboxFeature(request, response, next);
 });
@@ -335,7 +340,7 @@ async function start() {
 	validateAuthenticationConfiguration();
 	validateSecurityConfiguration();
 	await initializeDatabase();
-	await runMigrations();
+	await initializeSupport();
 	await initializeCreatorAssistance();
 	await initializeOrganizations();
 	await initializeGroups();
@@ -358,10 +363,10 @@ async function start() {
 	await initializePartnerSandbox();
 	await initializePartnerApiSandbox();
 	await initializePartnerRequests();
-	await initializeSupport();
 	await initializeClients();
 	await initializeDataImports();
 	await initializeLibrary();
+	await runMigrations();
 	await initializeHealthDashboard();
 	await createInitialAdministrator();
 	await recoverCreatorPassword();

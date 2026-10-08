@@ -4,6 +4,10 @@ import { readFileSync } from "node:fs";
 
 const workspace = readFileSync(new URL("../js/desktop-workspace.js", import.meta.url), "utf8");
 const clients = readFileSync(new URL("../js/clients.js", import.meta.url), "utf8");
+const calendar = readFileSync(new URL("../js/calendar.js", import.meta.url), "utf8");
+const billing = readFileSync(new URL("../js/billing.js", import.meta.url), "utf8");
+const purchases = readFileSync(new URL("../js/purchases.js", import.meta.url), "utf8");
+const businessSuite = readFileSync(new URL("../js/business-suite.js", import.meta.url), "utf8");
 const missions = readFileSync(new URL("../js/partner-missions.js", import.meta.url), "utf8");
 const navigation = readFileSync(new URL("../js/navigation.js", import.meta.url), "utf8");
 const index = readFileSync(new URL("../index.html", import.meta.url), "utf8");
@@ -40,6 +44,22 @@ test("les saisies courantes sont conservées en mémoire entre les onglets", () 
     assert.match(workspace, /captureDraft\(activeKey\)/);
     assert.match(workspace, /restoreDraftSoon\(item\.key\)/);
     assert.match(workspace, /abandonner les modifications non enregistrées/);
+});
+
+test("un enregistrement réussi nettoie uniquement le brouillon actif", () => {
+    assert.match(workspace, /export function markDesktopWorkspaceDraftSaved\(\)/);
+    assert.match(workspace, /drafts\.delete\(activeKey\)/);
+    assert.match(workspace, /window\.addEventListener\("beforeunload"/);
+    assert.match(clients, /markDesktopWorkspaceDraftSaved\(\);\s*await synchronizeClients\(\);/);
+    assert.match(calendar, /if \(!result\.ok\)[\s\S]+?markDesktopWorkspaceDraftSaved\(\);\s*if \(!isEditing/);
+    assert.match(billing, /const savedDocumentNumber[\s\S]+?markDesktopWorkspaceDraftSaved\(\);\s*if \(!isEditing/);
+    assert.match(billing, /\/issue[\s\S]+?if \(!result\.ok\)[^\n]+\n\s*markDesktopWorkspaceDraftSaved\(\)/);
+    assert.match(purchases, /if \(!result\.ok\)[^\n]+\n\s*markDesktopWorkspaceDraftSaved\(\);\s*activePurchase = null/);
+    assert.match(businessSuite, /await api\(url,[^\n]+markDesktopWorkspaceDraftSaved\(\); await complete\(\)/);
+    assert.match(businessSuite, /customer-portal\/links[^\n]+\n\s*markDesktopWorkspaceDraftSaved\(\)/);
+    assert.match(businessSuite, /events\/\$\{values\.eventId\}\/assets[^\n]+markDesktopWorkspaceDraftSaved\(\)/);
+    assert.match(businessSuite, /purchases\/\$\{data\.get\("purchaseId"\)\}\/event[^\n]+markDesktopWorkspaceDraftSaved\(\)/);
+    assert.match(businessSuite, /labor-costs\/\$\{encodeURIComponent\(data\.get\("role"\)\)\}[^\n]+markDesktopWorkspaceDraftSaved\(\)/);
 });
 
 test("tous les menus et sous-menus deviennent des onglets distincts et restaurables", () => {

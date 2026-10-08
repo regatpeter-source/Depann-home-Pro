@@ -280,14 +280,14 @@ export async function transitionPartnerMissionStatus({ ownerId, missionId, statu
     const connection = await getPool().connect(); let updated;
     try {
         await connection.query("BEGIN");
-        const current = await connection.query("SELECT status FROM depannhome_partner_missions WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL AND ($3::bigint IS NULL OR assigned_technician_id=$3) FOR UPDATE", [missionId, ownerId, assignedTechnicianId]);
+        const current = await connection.query("SELECT mission.status,intake.is_sandbox AS \"isSandbox\" FROM depannhome_partner_missions mission JOIN depannhome_partner_intakes intake ON intake.id=mission.intake_id WHERE mission.id=$1 AND mission.owner_id=$2 AND mission.deleted_at IS NULL AND ($3::bigint IS NULL OR mission.assigned_technician_id=$3) FOR UPDATE OF mission", [missionId, ownerId, assignedTechnicianId]);
         if (!current.rows[0]) throw clientError(404, "Mission introuvable.");
         const validTransition = current.rows[0].status === status
             || (STATUS_TRANSITIONS[current.rows[0].status] || []).includes(status)
             || (allowWorkflowAdvance && shouldAdvancePartnerMissionStatus(current.rows[0].status, status));
         if (details?.sandbox !== true && !validTransition) throw clientError(409, `Transition impossible de « ${statusLabel(current.rows[0].status)} » vers « ${statusLabel(status)} ».`);
         const { rows } = await connection.query("UPDATE depannhome_partner_missions SET status=$3,updated_at=NOW() WHERE id=$1 AND owner_id=$2 RETURNING *", [missionId, ownerId, status]);
-        updated = rows[0];
+        updated = { ...rows[0], isSandbox: current.rows[0].isSandbox };
         await writeHistory(connection, ownerId, missionId, status, action, actorId, actorRole, details, ip);
         await enqueue(connection, ownerId, missionId, "mission_status_changed", { status, ...details });
         await connection.query("COMMIT");
