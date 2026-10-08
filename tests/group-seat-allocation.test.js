@@ -94,6 +94,8 @@ test("les routes refusent les dépassements et les réductions sous l’usage ac
     assert.match(groups, /allocatedMobileSeats < Number\(usage\?\.activeMobileUsers/);
     assert.match(groups, /addedPcSeats > seats\.availablePcSeats \+ transferablePcSeats/);
     assert.match(groups, /allocated_pc_seats=allocated_pc_seats-\$2/);
+    assert.match(groups, /!isActive && currentAllocation\.isPrincipal/);
+    assert.match(groups, /L’entreprise principale ne peut pas être désactivée tant que le mode Groupe est actif/);
     assert.match(groups, /app\.get\("\/api\/groups\/seat-status"/);
 });
 
