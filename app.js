@@ -48,6 +48,7 @@ import { initializeGroups, registerGroupRoutes } from "./server/groups.js";
 import { registerHistoryRoutes } from "./server/history.js";
 import { initializeSupport, registerSupportRoutes } from "./server/support.js";
 import { registerPublicOfferRoutes } from "./server/public-offers.js";
+import { registerPublicAnalyticsRoutes } from "./server/public-analytics.js";
 import { registerCustomerPortalRoutes } from "./server/customer-portal.js";
 import { registerBusinessSuiteRoutes } from "./server/business-suite.js";
 import { registerAutomationRoutes, startAutomationScheduler } from "./server/automation.js";
@@ -148,6 +149,13 @@ app.use("/api/public/offer-requests", rateLimit({
 	standardHeaders: "draft-7",
 	legacyHeaders: false,
 	message: { message: "Trop de demandes ont été envoyées. Réessayez dans quelques minutes." }
+}));
+app.use("/api/public/analytics/events", rateLimit({
+	windowMs: 15 * 60 * 1000,
+	limit: 120,
+	standardHeaders: "draft-7",
+	legacyHeaders: false,
+	message: { message: "Trop d’événements de vitrine ont été reçus." }
 }));
 app.use("/portail", rateLimit({
 	windowMs: 15 * 60 * 1000,
@@ -267,6 +275,7 @@ registerDataImportRoutes(app, requireAuthentication);
 registerLibraryRoutes(app, requireAuthentication);
 registerSupportRoutes(app, requireAuthentication, requireCreator);
 registerPublicOfferRoutes(app);
+registerPublicAnalyticsRoutes(app, requireCreator);
 registerCustomerPortalRoutes(app, requireAuthentication);
 registerBusinessSuiteRoutes(app, requireAuthentication);
 registerAutomationRoutes(app, requireAuthentication);

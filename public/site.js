@@ -1,6 +1,41 @@
 const toggle = document.querySelector("[data-menu-toggle]");
 const navigation = document.querySelector("[data-site-nav]");
 
+const analyticsTargets = new Map([
+  ["/connexion", "login"],
+  ["/confidentialite", "legal_privacy"],
+  ["/conditions-utilisation", "legal_terms"],
+  ["/mentions-legales", "legal_notices"],
+  ["/logiciel-entreprise-depannage", "solution_business"],
+  ["/logiciel-planning-interventions", "solution_planning"],
+  ["/logiciel-devis-factures-artisans", "solution_invoicing"],
+  ["#demande-offre", "demo_request"],
+  ["#tarifs", "pricing"],
+  ["#solution", "features"],
+  ["#securite", "security"],
+  ["#questions-frequentes", "faq"]
+]);
+
+function recordPublicAnalytics(type, target = "") {
+  if (navigator.doNotTrack === "1") return;
+  fetch("/api/public/analytics/events", {
+    method: "POST",
+    credentials: "omit",
+    keepalive: true,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type, page: window.location.pathname, target })
+  }).catch(() => {});
+}
+
+recordPublicAnalytics("page_view");
+document.addEventListener("click", event => {
+  const link = event.target.closest("a[href]");
+  if (!link) return;
+  const href = link.getAttribute("href") || "";
+  const target = href.startsWith("mailto:support@depannhomepro.com") ? "support_email" : analyticsTargets.get(href);
+  if (target) recordPublicAnalytics("click", target);
+});
+
 toggle?.addEventListener("click", () => {
   const open = navigation?.classList.toggle("open") || false;
   toggle.setAttribute("aria-expanded", String(open));
@@ -61,6 +96,7 @@ const offerStatus = document.querySelector("[data-offer-status]");
 offerForm?.addEventListener("submit", async event => {
   event.preventDefault();
   if (!offerForm.reportValidity()) return;
+  recordPublicAnalytics("click", "offer_request");
   const submitButton = offerForm.querySelector("button[type='submit']");
   const data = new FormData(offerForm);
   const payload = Object.fromEntries(data.entries());

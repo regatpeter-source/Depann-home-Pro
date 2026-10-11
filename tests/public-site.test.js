@@ -68,6 +68,14 @@ test("la politique de confidentialité décrit explicitement l'usage limité des
     assert.match(privacy, /demande d’offre/);
 });
 
+test("la politique décrit la mesure d’audience interne sans traceur individuel", () => {
+    assert.match(privacy, /totaux journaliers de pages vues et de clics/);
+    assert.match(privacy, /aucun identifiant visiteur/);
+    assert.match(privacy, /ni adresse IP, ni type de navigateur, ni référent/);
+    assert.match(privacy, /Do Not Track/);
+    assert.match(privacy, /maximum 25 mois/);
+});
+
 test("le dossier de vérification Google aligne scopes, vidéo et accès reviewer", () => {
     assert.match(googleVerification, /https:\/\/www\.googleapis\.com\/auth\/gmail\.readonly/);
     assert.match(googleVerification, /https:\/\/www\.googleapis\.com\/auth\/gmail\.send/);

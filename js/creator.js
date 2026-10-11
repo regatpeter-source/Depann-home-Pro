@@ -1,7 +1,7 @@
 import { ROUTES } from "./config.js?v=105";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
-import { renderCreatorConnectors } from "./connectors.js?v=8";
+import { renderCreatorConnectors } from "./connectors.js?v=9";
 import { renderHealthDashboard } from "./health-dashboard.js?v=1";
 import { creatorHistoryPresentation } from "./creator-history.js?v=2";
 import { markDesktopWorkspaceDraftSaved } from "./desktop-workspace.js?v=5";
@@ -22,7 +22,7 @@ export async function renderCreatorConsole() {
         <section class="creator-console">
             <header class="creator-heading">
                 <div><p class="eyebrow">Administration plateforme</p><h2>Console Créateur</h2></div>
-                <div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorAssistance">🛟 Assistance entreprises</button><button type="button" class="secondary-button auth-outline-button" id="creatorSuperPdpProduction">SUPER PDP</button><button type="button" class="secondary-button auth-outline-button" id="creatorHealthDashboard">🩺 Santé du système <b class="creator-request-alert" data-health-alert hidden>0</b></button><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionRequests">Demandes d’offres</button><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerApiSandbox">🧪 Sandbox API partenaire</button><button type="button" class="secondary-button auth-outline-button" id="creatorSuperPdpSandbox">🧪 Sandbox SUPER PDP</button><button type="button" class="secondary-button auth-outline-button" id="creatorElectronicInvoicingMonitoring">Suivi e-facturation</button><button type="button" class="secondary-button auth-outline-button" id="creatorElectronicInvoicingPlatforms">Plateformes e-facturation</button><button type="button" class="secondary-button auth-outline-button" id="creatorPlatformAnnouncement">Affichage général</button><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerRequests">Demandes de partenariat</button><button type="button" class="secondary-button auth-outline-button" id="creatorOfficialPartners">Partenaires officiels</button><button type="button" class="secondary-button auth-outline-button" id="creatorSecurity">Sécurité du compte</button><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionInvoices">Factures abonnements</button><button type="button" class="secondary-button auth-outline-button" id="creatorBillingProfile">Facturation plateforme</button><button type="button" class="secondary-button auth-outline-button" id="creatorExternalProviders">Prestataires externes</button><button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle organisation</button></div>
+                <div class="creator-form-actions"><button type="button" class="secondary-button auth-outline-button" id="creatorAssistance">🛟 Assistance entreprises</button><button type="button" class="secondary-button auth-outline-button" id="creatorSuperPdpProduction">SUPER PDP</button><button type="button" class="secondary-button auth-outline-button" id="creatorPublicAnalytics">📈 Audience vitrine</button><button type="button" class="secondary-button auth-outline-button" id="creatorHealthDashboard">🩺 Santé du système <b class="creator-request-alert" data-health-alert hidden>0</b></button><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionRequests">Demandes d’offres</button><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerApiSandbox">🧪 Sandbox API partenaire</button><button type="button" class="secondary-button auth-outline-button" id="creatorSuperPdpSandbox">🧪 Sandbox SUPER PDP</button><button type="button" class="secondary-button auth-outline-button" id="creatorElectronicInvoicingMonitoring">Suivi e-facturation</button><button type="button" class="secondary-button auth-outline-button" id="creatorElectronicInvoicingPlatforms">Plateformes e-facturation</button><button type="button" class="secondary-button auth-outline-button" id="creatorPlatformAnnouncement">Affichage général</button><button type="button" class="secondary-button auth-outline-button" id="creatorPartnerRequests">Demandes de partenariat</button><button type="button" class="secondary-button auth-outline-button" id="creatorOfficialPartners">Partenaires officiels</button><button type="button" class="secondary-button auth-outline-button" id="creatorSecurity">Sécurité du compte</button><button type="button" class="secondary-button auth-outline-button" id="creatorSubscriptionInvoices">Factures abonnements</button><button type="button" class="secondary-button auth-outline-button" id="creatorBillingProfile">Facturation plateforme</button><button type="button" class="secondary-button auth-outline-button" id="creatorExternalProviders">Prestataires externes</button><button type="button" class="secondary-button" id="creatorNewAccount">+ Nouvelle organisation</button></div>
             </header>
             <p id="creatorFeedback" class="auth-message" aria-live="polite"></p>
             <section class="creator-subscription-summary" id="creatorSubscriptionSummary" aria-label="Synthèse des abonnements"></section>
@@ -51,6 +51,7 @@ export async function renderCreatorConsole() {
     container.querySelector("#creatorNewAccount").addEventListener("click", () => renderAccountForm());
     container.querySelector("#creatorAssistance").addEventListener("click", renderCreatorAssistance);
     container.querySelector("#creatorSuperPdpProduction").addEventListener("click", renderCreatorPlatformSuperPdp);
+    container.querySelector("#creatorPublicAnalytics").addEventListener("click", () => renderCreatorPublicAnalytics());
     container.querySelector("#creatorHealthDashboard").addEventListener("click", () => renderHealthDashboard(container.querySelector("#creatorWorkspace")));
     container.querySelector("#creatorSubscriptionRequests").addEventListener("click", renderSubscriptionChangeRequests);
     container.querySelector("#creatorPartnerApiSandbox").addEventListener("click", renderPartnerApiSandbox);
@@ -78,6 +79,40 @@ export async function renderCreatorConsole() {
             }
         });
     }
+}
+
+async function renderCreatorPublicAnalytics(days = 30) {
+    const workspace = document.querySelector("#creatorWorkspace");
+    workspace.innerHTML = '<p class="muted">Chargement de l’audience de la vitrine…</p>';
+    const result = await api(`/api/creator/public-analytics?days=${encodeURIComponent(days)}`);
+    if (!result.ok) return showFeedback(result.message || "Impossible de charger l’audience de la vitrine.", true);
+    const summary = result.data?.summary || {};
+    const pageViews = Number(summary.pageViews) || 0;
+    const intentClicks = Number(summary.intentClicks) || 0;
+    const conversion = pageViews ? (intentClicks / pageViews * 100).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) : "0";
+    const pages = result.data?.pages || [];
+    const actions = result.data?.actions || [];
+    const daily = result.data?.daily || [];
+    workspace.innerHTML = `<section class="creator-form creator-public-analytics">
+        <div class="form-heading"><div><p class="eyebrow">Mesure interne · données agrégées</p><h3>Audience de la vitrine</h3></div><label>Période <select data-analytics-period>${[7, 30, 90, 365].map(period => `<option value="${period}" ${Number(result.data?.days) === period ? "selected" : ""}>${period} jours</option>`).join("")}</select></label></div>
+        <aside class="accounting-pdp-notice"><strong>Respect de la vie privée.</strong> Seuls des totaux journaliers sont conservés. Aucun cookie analytique, identifiant visiteur, adresse IP, user-agent ou référent n’est enregistré.</aside>
+        <div class="creator-network-stats"><article><span>Pages vues</span><strong>${pageViews.toLocaleString("fr-FR")}</strong></article><article><span>Vues aujourd’hui</span><strong>${(Number(summary.todayViews) || 0).toLocaleString("fr-FR")}</strong></article><article><span>Clics suivis</span><strong>${(Number(summary.clicks) || 0).toLocaleString("fr-FR")}</strong></article><article><span>Clics d’intention</span><strong>${intentClicks.toLocaleString("fr-FR")} · ${escapeHtml(conversion)} %</strong></article></div>
+        <div class="creator-layout"><section><h4>Pages consultées</h4><div class="creator-network-list">${pages.length ? pages.map(item => analyticsRow(publicAnalyticsPageLabel(item.page), item.count)).join("") : '<p class="muted">Aucune page vue sur cette période.</p>'}</div></section><section><h4>Actions cliquées</h4><div class="creator-network-list">${actions.length ? actions.map(item => analyticsRow(publicAnalyticsActionLabel(item.target), item.count)).join("") : '<p class="muted">Aucun clic suivi sur cette période.</p>'}</div></section></div>
+        <h4>Activité quotidienne</h4><div class="creator-network-list">${daily.length ? daily.slice().reverse().map(item => `<article class="creator-network-company"><strong>${escapeHtml(new Date(`${item.date}T12:00:00`).toLocaleDateString("fr-FR"))}</strong><span>${(Number(item.views) || 0).toLocaleString("fr-FR")} vue(s) · ${(Number(item.clicks) || 0).toLocaleString("fr-FR")} clic(s)</span></article>`).join("") : '<p class="muted">Aucune activité enregistrée.</p>'}</div>
+    </section>`;
+    workspace.querySelector("[data-analytics-period]").addEventListener("change", event => renderCreatorPublicAnalytics(Number(event.target.value)));
+}
+
+function analyticsRow(label, count) {
+    return `<article class="creator-network-company"><strong>${escapeHtml(label)}</strong><span>${(Number(count) || 0).toLocaleString("fr-FR")}</span></article>`;
+}
+
+function publicAnalyticsPageLabel(page) {
+    return ({ "/": "Accueil", "/confidentialite": "Confidentialité", "/conditions-utilisation": "Conditions d’utilisation", "/mentions-legales": "Mentions légales", "/logiciel-entreprise-depannage": "Logiciel entreprise de dépannage", "/logiciel-planning-interventions": "Logiciel planning d’interventions", "/logiciel-devis-factures-artisans": "Logiciel devis et factures" })[page] || page;
+}
+
+function publicAnalyticsActionLabel(target) {
+    return ({ demo_request: "Demander une démo", offer_request: "Envoyer une demande d’offre", login: "Ouvrir la connexion", support_email: "Écrire au support", pricing: "Voir les tarifs", features: "Voir les fonctionnalités", security: "Voir la sécurité", faq: "Voir les questions", solution_business: "Voir la solution dépannage", solution_planning: "Voir la solution planning", solution_invoicing: "Voir la solution facturation", legal_privacy: "Voir la confidentialité", legal_terms: "Voir les conditions", legal_notices: "Voir les mentions légales" })[target] || target;
 }
 
 async function renderCreatorStorageUsage() {
