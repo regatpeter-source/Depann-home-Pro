@@ -14,6 +14,7 @@ const tableSources = [migration, schema];
 
 test("les événements publics sont limités aux pages et actions connues", () => {
     assert.deepEqual(sanitizePublicAnalyticsEvent({ type: "page_view", page: "/logiciel-planning-interventions?source=test" }), { type: "page_view", page: "/logiciel-planning-interventions", target: "" });
+    assert.deepEqual(sanitizePublicAnalyticsEvent({ type: "page_view", page: "/logiciel-gestion-plombier" }), { type: "page_view", page: "/logiciel-gestion-plombier", target: "" });
     assert.deepEqual(sanitizePublicAnalyticsEvent({ type: "click", page: "/", target: "demo_request" }), { type: "click", page: "/", target: "demo_request" });
     assert.equal(sanitizePublicAnalyticsEvent({ type: "click", page: "/", target: "texte-libre" }), null);
     assert.equal(sanitizePublicAnalyticsEvent({ type: "page_view", page: "/api/auth/session" }), null);

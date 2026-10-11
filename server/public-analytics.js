@@ -8,7 +8,12 @@ const PUBLIC_PAGES = new Set([
     "/mentions-legales",
     "/logiciel-entreprise-depannage",
     "/logiciel-planning-interventions",
-    "/logiciel-devis-factures-artisans"
+    "/logiciel-devis-factures-artisans",
+    "/logiciel-gestion-plombier",
+    "/logiciel-maintenance-sav",
+    "/logiciel-gestion-interventions-terrain",
+    "/application-mobile-techniciens",
+    "/logiciel-facturation-electronique-artisans"
 ]);
 const CLICK_TARGETS = new Set([
     "demo_request",

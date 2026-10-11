@@ -10,6 +10,11 @@ const legal = readFileSync(new URL("../public/mentions.html", import.meta.url), 
 const businessSoftware = readFileSync(new URL("../public/logiciel-entreprise-depannage.html", import.meta.url), "utf8");
 const schedulingSoftware = readFileSync(new URL("../public/logiciel-planning-interventions.html", import.meta.url), "utf8");
 const invoicingSoftware = readFileSync(new URL("../public/logiciel-devis-factures-artisans.html", import.meta.url), "utf8");
+const plumberSoftware = readFileSync(new URL("../public/logiciel-gestion-plombier.html", import.meta.url), "utf8");
+const maintenanceSoftware = readFileSync(new URL("../public/logiciel-maintenance-sav.html", import.meta.url), "utf8");
+const fieldSoftware = readFileSync(new URL("../public/logiciel-gestion-interventions-terrain.html", import.meta.url), "utf8");
+const mobileSoftware = readFileSync(new URL("../public/application-mobile-techniciens.html", import.meta.url), "utf8");
+const electronicInvoicingSoftware = readFileSync(new URL("../public/logiciel-facturation-electronique-artisans.html", import.meta.url), "utf8");
 const siteScript = readFileSync(new URL("../public/site.js", import.meta.url), "utf8");
 const sitemap = readFileSync(new URL("../public/sitemap.xml", import.meta.url), "utf8");
 const clientApp = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
@@ -144,7 +149,7 @@ test("la vitrine cible des recherches métier avec un contenu factuel et indexab
     assert.match(landing, /logiciel de gestion conçu pour les entreprises de dépannage/i);
     assert.match(landing, /id="questions-frequentes"/);
     assert.match(landing, /planning d’interventions/);
-    assert.match(sitemap, /<loc>https:\/\/depannhomepro\.com\/<\/loc><lastmod>2026-10-06<\/lastmod>/);
+    assert.match(sitemap, /<loc>https:\/\/depannhomepro\.com\/<\/loc><lastmod>2026-10-11<\/lastmod>/);
     assert.match(landing, /application\/ld\+json/);
     assert.match(landing, /"@type":"SoftwareApplication"/);
     assert.doesNotMatch(landing, /aggregateRating|ratingValue|ratingCount/);
@@ -181,6 +186,36 @@ test("chaque page solution répond à une intention de recherche distincte et fa
     assert.match(invoicingSoftware, /devis, factures et avoirs[\s\S]*SUPER PDP/i);
 });
 
+test("le cocon SEO couvre cinq intentions complémentaires sans pages satellites", () => {
+    const pages = [
+        ["logiciel-gestion-plombier", plumberSoftware, /Logiciel de gestion pour plombier/],
+        ["logiciel-maintenance-sav", maintenanceSoftware, /Logiciel de maintenance et SAV/],
+        ["logiciel-gestion-interventions-terrain", fieldSoftware, /Logiciel de gestion des interventions terrain/],
+        ["application-mobile-techniciens", mobileSoftware, /Application mobile pour techniciens/],
+        ["logiciel-facturation-electronique-artisans", electronicInvoicingSoftware, /Logiciel de facturation électronique pour artisans/]
+    ];
+    for (const [slug, page, title] of pages) {
+        assert.match(appSource, new RegExp(`app\\.get\\("/${slug}"[\\s\\S]*?${slug}\\.html`));
+        assert.match(page, title);
+        assert.match(page, /name="description" content="[^"]{100,160}"/);
+        assert.match(page, new RegExp(`<link rel="canonical" href="https://depannhomepro\\.com/${slug}">`));
+        assert.match(page, /"@type":"WebPage"/);
+        assert.match(page, /"@type":"SoftwareApplication"/);
+        assert.match(page, /"@type":"FAQPage"/);
+        assert.match(page, /"@type":"BreadcrumbList"/);
+        assert.match(page, /href="\/logiciel-(?:entreprise-depannage|planning-interventions|devis-factures-artisans)/);
+        assert.match(page, /href="\/#demande-offre"/);
+        assert.match(sitemap, new RegExp(`<loc>https://depannhomepro\\.com/${slug}</loc><lastmod>2026-10-11</lastmod>`));
+        assert.match(landing, new RegExp(`href="/${slug}"`));
+        assert.doesNotMatch(page, /meta name="keywords"|aggregateRating|ratingValue|ratingCount/i);
+    }
+    assert.match(plumberSoftware, /plomberie[\s\S]*dépannage[\s\S]*devis et factures/i);
+    assert.match(maintenanceSoftware, /maintenance[\s\S]*équipements[\s\S]*historique/i);
+    assert.match(fieldSoftware, /interventions terrain[\s\S]*bureau[\s\S]*compte rendu/i);
+    assert.match(mobileSoftware, /techniciens itinérants[\s\S]*rendez-vous[\s\S]*photos/i);
+    assert.match(electronicInvoicingSoftware, /facturation électronique[\s\S]*SUPER PDP[\s\S]*sans double saisie/i);
+});
+
 test("la vitrine présente les fonctions tout-en-un récemment disponibles", () => {
     assert.match(landing, /Planning partagé[\s\S]*plein écran[\s\S]*équipes et techniciens/i);
     assert.doesNotMatch(landing, /détach|second (?:écran|moniteur)|multi-écran/i);
@@ -191,7 +226,7 @@ test("la vitrine présente les fonctions tout-en-un récemment disponibles", () 
 });
 
 test("les données structurées des pages commerciales sont des JSON-LD valides", () => {
-    [landing, businessSoftware, schedulingSoftware, invoicingSoftware].forEach(page => {
+    [landing, businessSoftware, schedulingSoftware, invoicingSoftware, plumberSoftware, maintenanceSoftware, fieldSoftware, mobileSoftware, electronicInvoicingSoftware].forEach(page => {
         const match = page.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
         assert.ok(match, "un bloc JSON-LD doit être présent");
         assert.doesNotThrow(() => JSON.parse(match[1]));

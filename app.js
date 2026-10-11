@@ -307,6 +307,21 @@ app.get("/logiciel-planning-interventions", (request, response) => {
 app.get("/logiciel-devis-factures-artisans", (request, response) => {
 	response.sendFile(path.join(rootDirectory, "public", "logiciel-devis-factures-artisans.html"), { headers: { "Cache-Control": "public, max-age=3600" } });
 });
+app.get("/logiciel-gestion-plombier", (request, response) => {
+	response.sendFile(path.join(rootDirectory, "public", "logiciel-gestion-plombier.html"), { headers: { "Cache-Control": "public, max-age=3600" } });
+});
+app.get("/logiciel-maintenance-sav", (request, response) => {
+	response.sendFile(path.join(rootDirectory, "public", "logiciel-maintenance-sav.html"), { headers: { "Cache-Control": "public, max-age=3600" } });
+});
+app.get("/logiciel-gestion-interventions-terrain", (request, response) => {
+	response.sendFile(path.join(rootDirectory, "public", "logiciel-gestion-interventions-terrain.html"), { headers: { "Cache-Control": "public, max-age=3600" } });
+});
+app.get("/application-mobile-techniciens", (request, response) => {
+	response.sendFile(path.join(rootDirectory, "public", "application-mobile-techniciens.html"), { headers: { "Cache-Control": "public, max-age=3600" } });
+});
+app.get("/logiciel-facturation-electronique-artisans", (request, response) => {
+	response.sendFile(path.join(rootDirectory, "public", "logiciel-facturation-electronique-artisans.html"), { headers: { "Cache-Control": "public, max-age=3600" } });
+});
 app.get("/robots.txt", (request, response) => response.sendFile(path.join(rootDirectory, "public", "robots.txt")));
 app.get("/sitemap.xml", (request, response) => response.sendFile(path.join(rootDirectory, "public", "sitemap.xml")));
 app.use("/data", requireAuthentication, requireTechnicalWorkspaceAccess, express.static(path.join(rootDirectory, "data"), { index: false }));
