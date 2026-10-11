@@ -57,4 +57,7 @@ test("la Console Créateur affiche la synthèse et le détail de l’audience", 
     assert.match(creatorClient, /\/api\/creator\/public-analytics/);
     assert.match(creatorClient, /Pages vues/);
     assert.match(creatorClient, /Clics d’intention/);
+    assert.match(creatorClient, /data-refresh-analytics>Actualiser/);
+    assert.match(creatorClient, /public-analytics\?days=\$\{encodeURIComponent\(days\)\}`,[^\n]+cache: "no-store"/);
+    assert.match(server, /response\.set\("Cache-Control", "no-store"\)/);
 });

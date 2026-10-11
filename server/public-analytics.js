@@ -42,6 +42,7 @@ export function registerPublicAnalyticsRoutes(app, requireCreator) {
     }));
 
     app.get("/api/creator/public-analytics", requireCreator, asyncHandler(async (request, response) => {
+        response.set("Cache-Control", "no-store");
         const days = PERIODS.has(Number(request.query.days)) ? Number(request.query.days) : 30;
         const database = getPool();
         const [summary, daily, pages, actions] = await Promise.all([

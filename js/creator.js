@@ -1,7 +1,7 @@
 import { ROUTES } from "./config.js?v=105";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
-import { renderCreatorConnectors } from "./connectors.js?v=9";
+import { renderCreatorConnectors } from "./connectors.js?v=10";
 import { renderHealthDashboard } from "./health-dashboard.js?v=1";
 import { creatorHistoryPresentation } from "./creator-history.js?v=2";
 import { markDesktopWorkspaceDraftSaved } from "./desktop-workspace.js?v=5";
@@ -84,7 +84,7 @@ export async function renderCreatorConsole() {
 async function renderCreatorPublicAnalytics(days = 30) {
     const workspace = document.querySelector("#creatorWorkspace");
     workspace.innerHTML = '<p class="muted">Chargement de l’audience de la vitrine…</p>';
-    const result = await api(`/api/creator/public-analytics?days=${encodeURIComponent(days)}`);
+    const result = await api(`/api/creator/public-analytics?days=${encodeURIComponent(days)}`, { cache: "no-store" });
     if (!result.ok) return showFeedback(result.message || "Impossible de charger l’audience de la vitrine.", true);
     const summary = result.data?.summary || {};
     const pageViews = Number(summary.pageViews) || 0;
@@ -94,13 +94,14 @@ async function renderCreatorPublicAnalytics(days = 30) {
     const actions = result.data?.actions || [];
     const daily = result.data?.daily || [];
     workspace.innerHTML = `<section class="creator-form creator-public-analytics">
-        <div class="form-heading"><div><p class="eyebrow">Mesure interne · données agrégées</p><h3>Audience de la vitrine</h3></div><label>Période <select data-analytics-period>${[7, 30, 90, 365].map(period => `<option value="${period}" ${Number(result.data?.days) === period ? "selected" : ""}>${period} jours</option>`).join("")}</select></label></div>
+        <div class="form-heading"><div><p class="eyebrow">Mesure interne · données agrégées</p><h3>Audience de la vitrine</h3></div><div class="creator-form-actions"><label>Période <select data-analytics-period>${[7, 30, 90, 365].map(period => `<option value="${period}" ${Number(result.data?.days) === period ? "selected" : ""}>${period} jours</option>`).join("")}</select></label><button type="button" class="secondary-button" data-refresh-analytics>Actualiser</button></div></div>
         <aside class="accounting-pdp-notice"><strong>Respect de la vie privée.</strong> Seuls des totaux journaliers sont conservés. Aucun cookie analytique, identifiant visiteur, adresse IP, user-agent ou référent n’est enregistré.</aside>
         <div class="creator-network-stats"><article><span>Pages vues</span><strong>${pageViews.toLocaleString("fr-FR")}</strong></article><article><span>Vues aujourd’hui</span><strong>${(Number(summary.todayViews) || 0).toLocaleString("fr-FR")}</strong></article><article><span>Clics suivis</span><strong>${(Number(summary.clicks) || 0).toLocaleString("fr-FR")}</strong></article><article><span>Clics d’intention</span><strong>${intentClicks.toLocaleString("fr-FR")} · ${escapeHtml(conversion)} %</strong></article></div>
         <div class="creator-layout"><section><h4>Pages consultées</h4><div class="creator-network-list">${pages.length ? pages.map(item => analyticsRow(publicAnalyticsPageLabel(item.page), item.count)).join("") : '<p class="muted">Aucune page vue sur cette période.</p>'}</div></section><section><h4>Actions cliquées</h4><div class="creator-network-list">${actions.length ? actions.map(item => analyticsRow(publicAnalyticsActionLabel(item.target), item.count)).join("") : '<p class="muted">Aucun clic suivi sur cette période.</p>'}</div></section></div>
         <h4>Activité quotidienne</h4><div class="creator-network-list">${daily.length ? daily.slice().reverse().map(item => `<article class="creator-network-company"><strong>${escapeHtml(new Date(`${item.date}T12:00:00`).toLocaleDateString("fr-FR"))}</strong><span>${(Number(item.views) || 0).toLocaleString("fr-FR")} vue(s) · ${(Number(item.clicks) || 0).toLocaleString("fr-FR")} clic(s)</span></article>`).join("") : '<p class="muted">Aucune activité enregistrée.</p>'}</div>
     </section>`;
     workspace.querySelector("[data-analytics-period]").addEventListener("change", event => renderCreatorPublicAnalytics(Number(event.target.value)));
+    workspace.querySelector("[data-refresh-analytics]").addEventListener("click", () => renderCreatorPublicAnalytics(Number(workspace.querySelector("[data-analytics-period]").value)));
 }
 
 function analyticsRow(label, count) {
