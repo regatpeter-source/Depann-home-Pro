@@ -14,7 +14,7 @@ import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partn
 import { renderDataImportTool } from "./data-imports.js?v=5";
 import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=69";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
-import { getSearchableClients, refreshClientDirectoryAfterSynchronization, renderClients } from "./clients.js?v=180";
+import { getSearchableClients, refreshClientDirectoryAfterSynchronization, renderClients } from "./clients.js?v=181";
 import { initializeDesktopWorkspace } from "./desktop-workspace.js?v=5";
 import { synchronizeClients } from "./client-sync.js?v=132";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=124";

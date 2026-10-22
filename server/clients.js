@@ -273,7 +273,7 @@ export function registerClientRoutes(app, requireAuthentication) {
             WHERE note.owner_id=$1
             ORDER BY CASE note.color WHEN 'red' THEN 0 ELSE 1 END, note.created_at DESC, note.id DESC
         `, [getAccountOwnerId(request)]);
-        response.json({ stickyNotes: rows });
+        response.set("Cache-Control", "private, no-store").json({ stickyNotes: rows });
     }));
 
     app.use("/api/clients/:clientId", asyncHandler(requireAssignedMobileClientAccess));
@@ -292,7 +292,7 @@ export function registerClientRoutes(app, requireAuthentication) {
             WHERE owner_id=$1 AND client_id=$2
             ORDER BY CASE color WHEN 'red' THEN 0 ELSE 1 END, created_at DESC, id DESC
         `, [ownerId, clientId]);
-        response.json({ stickyNotes: rows });
+        response.set("Cache-Control", "private, no-store").json({ stickyNotes: rows });
     }));
 
     app.post("/api/clients/:clientId/sticky-notes", requireAuthentication, asyncHandler(async (request, response) => {
@@ -311,7 +311,7 @@ export function registerClientRoutes(app, requireAuthentication) {
             RETURNING id, color, body, created_by AS "createdBy", created_by_name AS "createdByName", created_at AS "createdAt"
         `, [ownerId, clientId, request.user.sub, String(request.user.fullName || request.user.username || "Utilisateur").slice(0, 160), color, body]);
         if (!rows.length) return response.status(404).json({ message: "Dossier client introuvable ou archivé." });
-        response.status(201).json({ stickyNote: rows[0] });
+        response.set("Cache-Control", "private, no-store").status(201).json({ stickyNote: rows[0] });
     }));
 
     app.delete("/api/clients/:clientId/sticky-notes/:noteId", requireAuthentication, asyncHandler(async (request, response) => {
@@ -323,7 +323,7 @@ export function registerClientRoutes(app, requireAuthentication) {
             WHERE id=$1 AND owner_id=$2 AND client_id=$3
         `, [noteId, getAccountOwnerId(request), clientId]);
         if (!rowCount) return response.status(404).json({ message: "Post-it introuvable." });
-        response.json({ message: "Tâche réalisée : le post-it a été supprimé." });
+        response.set("Cache-Control", "private, no-store").json({ message: "Tâche réalisée : le post-it a été supprimé." });
     }));
 
     app.put("/api/clients/:clientId", requireAuthentication, requireClientWriteAccess, asyncHandler(async (request, response) => {

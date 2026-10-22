@@ -46,6 +46,10 @@ test("la fiche client crée des post-it jaunes ou rouges et ne les retire que ma
     assert.match(client, /escapeHtml\(note\.body\)/);
     assert.match(client, /composer\.hidden = !opening/);
     assert.match(client, /form\.reset\(\);[\s\S]*closeComposer\(\)/);
+    assert.match(client, /method: "POST",[\s\S]*keepalive: true/);
+    assert.match(client, /credentials: "same-origin", cache: "no-store"/);
+    assert.match(server, /response\.set\("Cache-Control", "private, no-store"\)\.status\(201\)/);
+    assert.match(server, /response\.set\("Cache-Control", "private, no-store"\)\.json\(\{ stickyNotes: rows \}\)/);
     assert.doesNotMatch(server, /expires_at[\s\S]{0,200}depannhome_client_sticky_notes|DELETE FROM depannhome_client_sticky_notes[\s\S]{0,200}(?:interval|created_at\s*[<>])/i);
 });
 

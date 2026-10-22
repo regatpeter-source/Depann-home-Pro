@@ -747,6 +747,7 @@ function bindClientStickyNotes(section, client) {
         try {
             await clientStickyNoteRequest(client.id, "", {
                 method: "POST",
+                keepalive: true,
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ body: String(formData.get("body") || "").trim(), color: formData.get("color") })
             });
@@ -804,7 +805,7 @@ async function loadClientStickyNotes(section, client) {
 
 async function clientStickyNoteRequest(clientId, noteId = "", options = {}) {
     const suffix = noteId ? `/${encodeURIComponent(noteId)}` : "";
-    const response = await fetch(`/api/clients/${encodeURIComponent(clientId)}/sticky-notes${suffix}`, { credentials: "same-origin", ...options });
+    const response = await fetch(`/api/clients/${encodeURIComponent(clientId)}/sticky-notes${suffix}`, { credentials: "same-origin", cache: "no-store", ...options });
     const payload = await response.json().catch(() => null);
     if (!response.ok) throw new Error(payload?.message || "Action impossible sur le post-it.");
     return payload || {};
