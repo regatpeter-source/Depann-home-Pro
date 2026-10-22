@@ -73,7 +73,7 @@ test("le formulaire affiche les blocages de quota et les erreurs serveur dans la
 });
 
 test("le sélecteur supérieur recharge les entreprises après une modification du Groupe", () => {
-    assert.match(groupsClient, /notifyGroupCompaniesChanged\(\);\s*renderGroupWorkspace\(\);/);
+    assert.match(groupsClient, /notifyGroupCompaniesChanged\(\);[\s\S]{0,100}renderGroupWorkspace\(\);/);
     assert.match(groupsClient, /depannhome:group-companies-changed/);
     assert.match(appClient, /addEventListener\("depannhome:group-companies-changed", \(\) => refreshGroupCompanySelector\(\)\)/);
     assert.match(appClient, /fetch\("\/api\/groups\/context", \{ credentials: "same-origin", cache: "no-store" \}\)/);

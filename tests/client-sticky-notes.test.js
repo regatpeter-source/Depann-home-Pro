@@ -79,3 +79,14 @@ test("la synthèse PC du tableau de bord est isolée par entreprise et ouvre le 
     assert.match(style, /\.dashboard-sticky-note-red\{[^}]*background:#fee2e2/);
     assert.match(style, /dark-theme \.dashboard-sticky-note-red/);
 });
+
+test("plusieurs post-it du tableau de bord forment une pile papier déroulable", () => {
+    assert.match(navigation, /function dashboardStickyNoteHtml\(note, preview = false\)/);
+    assert.match(navigation, /notes\.length === 1[\s\S]*dashboardStickyNoteHtml\(notes\[0\]\)[\s\S]*<details class="dashboard-sticky-note-stack">/);
+    assert.match(navigation, /<summary aria-label="Dérouler les \$\{notes\.length\} post-it">/);
+    assert.match(navigation, /dashboard-sticky-note-expanded[\s\S]*notes\.map\(note => dashboardStickyNoteHtml\(note\)\)/);
+    assert.match(style, /\.dashboard-sticky-note::before\{[^}]*background:rgba\(255,255,255,\.58\)/);
+    assert.match(style, /\.dashboard-sticky-note::after\{[^}]*border-width:0 0 24px 24px/);
+    assert.match(style, /\.dashboard-sticky-note-stack>summary::before,\.dashboard-sticky-note-stack>summary::after/);
+    assert.match(style, /\.dashboard-sticky-note-stack\[open\] \.dashboard-sticky-note-toggle>span:last-child\{display:inline/);
+});

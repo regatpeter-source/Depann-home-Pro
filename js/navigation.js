@@ -1309,9 +1309,20 @@ async function renderHome() {
 
 function renderDashboardStickyNotes() {
     return `<section class="dashboard-sticky-notes" data-dashboard-sticky-notes>
-        <div class="dashboard-sticky-notes-heading"><div><p class="eyebrow">Tâches clients</p><h3>Post-it en attente</h3><p class="muted">Les urgences rouges apparaissent en premier. Ouvrez un post-it pour reprendre directement le dossier.</p></div><span data-dashboard-sticky-count>…</span></div>
+        <div class="dashboard-sticky-notes-heading"><div><p class="eyebrow">Tâches clients</p><h3>Post-it en attente</h3><p class="muted">Les urgences rouges apparaissent en premier. Déroulez la pile puis ouvrez un post-it pour reprendre le dossier.</p></div><span data-dashboard-sticky-count>…</span></div>
         <div class="dashboard-sticky-note-list" data-dashboard-sticky-list><p class="muted">Chargement des post-it…</p></div>
     </section>`;
+}
+
+function dashboardStickyNoteHtml(note, preview = false) {
+    const tag = preview ? "span" : "button";
+    const attributes = preview ? 'aria-hidden="true"' : `type="button" data-dashboard-sticky-client="${escapeHtml(String(note.clientId || ""))}"`;
+    return `<${tag} ${attributes} class="dashboard-sticky-note${preview ? " dashboard-sticky-note-preview" : ""} dashboard-sticky-note-${note.color === "red" ? "red" : "yellow"}">
+        <span class="dashboard-sticky-note-priority">${note.color === "red" ? "Urgent" : "En cours"}</span>
+        <strong>${escapeHtml(note.clientName || "Client sans nom")}${note.clientStatus === "archived" ? " · Archivé" : ""}</strong>
+        <span>${escapeHtml(note.body || "")}</span>
+        <small>${escapeHtml(note.createdByName || "Utilisateur")} · ${escapeHtml(formatDashboardDateTime(note.createdAt))}</small>
+    </${tag}>`;
 }
 
 async function loadDashboardStickyNotes(panel) {
@@ -1328,12 +1339,15 @@ async function loadDashboardStickyNotes(panel) {
             list.innerHTML = '<p class="dashboard-sticky-note-empty">Aucun post-it en attente. Tout est à jour.</p>';
             return;
         }
-        list.innerHTML = notes.map(note => `<button type="button" class="dashboard-sticky-note dashboard-sticky-note-${note.color === "red" ? "red" : "yellow"}" data-dashboard-sticky-client="${escapeHtml(String(note.clientId || ""))}">
-            <span class="dashboard-sticky-note-priority">${note.color === "red" ? "Urgent" : "En cours"}</span>
-            <strong>${escapeHtml(note.clientName || "Client sans nom")}${note.clientStatus === "archived" ? " · Archivé" : ""}</strong>
-            <span>${escapeHtml(note.body || "")}</span>
-            <small>${escapeHtml(note.createdByName || "Utilisateur")} · ${escapeHtml(formatDashboardDateTime(note.createdAt))}</small>
-        </button>`).join("");
+        list.innerHTML = notes.length === 1
+            ? dashboardStickyNoteHtml(notes[0])
+            : `<details class="dashboard-sticky-note-stack">
+                <summary aria-label="Dérouler les ${notes.length} post-it">
+                    ${dashboardStickyNoteHtml(notes[0], true)}
+                    <span class="dashboard-sticky-note-toggle"><span>Dérouler les ${notes.length} post-it</span><span>Replier la pile</span></span>
+                </summary>
+                <div class="dashboard-sticky-note-expanded">${notes.map(note => dashboardStickyNoteHtml(note)).join("")}</div>
+            </details>`;
         list.querySelectorAll("[data-dashboard-sticky-client]").forEach(button => button.addEventListener("click", () => openClients(button.dataset.dashboardStickyClient)));
     } catch {
         if (!section.isConnected) return;

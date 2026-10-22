@@ -3026,21 +3026,48 @@ body[data-role="mobile_admin"].mobile-device .store-match{min-height:72px;paddin
 .dashboard-sticky-notes-heading h3{margin:3px 0;color:var(--primary);}
 .dashboard-sticky-notes-heading .muted{margin:5px 0 0;}
 .dashboard-sticky-notes-heading>span{padding:6px 10px;border-radius:999px;background:#fff4b8;color:#725600;font-size:12px;font-weight:900;white-space:nowrap;}
-.dashboard-sticky-note-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;max-height:430px;overflow:auto;padding:2px;}
-.dashboard-sticky-note{display:grid;align-content:start;gap:7px;min-width:0;padding:15px;border:1px solid transparent;border-radius:4px 4px 15px 4px;color:#3f3300;text-align:left;box-shadow:0 7px 14px rgba(62,48,0,.12);cursor:pointer;}
+.dashboard-sticky-note-list{min-width:0;padding:10px 8px 8px;}
+.dashboard-sticky-note{position:relative;display:grid;align-content:start;gap:8px;width:min(100%,330px);min-height:190px;padding:27px 20px 20px;border:1px solid transparent;border-radius:2px 3px 18px 3px;color:#3f3300;text-align:left;box-shadow:0 12px 22px rgba(62,48,0,.18),inset 0 -1px rgba(62,48,0,.08);cursor:pointer;transform:rotate(-.45deg);transition:transform .16s ease,box-shadow .16s ease;}
+.dashboard-sticky-note::before{content:"";position:absolute;top:-8px;left:50%;width:82px;height:22px;background:rgba(255,255,255,.58);box-shadow:0 1px 3px rgba(62,48,0,.12);transform:translateX(-50%) rotate(-2deg);}
+.dashboard-sticky-note::after{content:"";position:absolute;right:-1px;bottom:-1px;border-style:solid;border-width:0 0 24px 24px;border-color:transparent transparent rgba(255,255,255,.72) transparent;filter:drop-shadow(-2px -2px 2px rgba(62,48,0,.08));}
 .dashboard-sticky-note-yellow{border-color:#e6c84e;background:#fef3c7;}
 .dashboard-sticky-note-red{border-color:#ef9999;background:#fee2e2;color:#641b1b;}
-.dashboard-sticky-note:hover,.dashboard-sticky-note:focus-visible{outline:3px solid rgba(10,92,54,.25);outline-offset:2px;transform:translateY(-1px);}
+.dashboard-sticky-note:hover,.dashboard-sticky-note:focus-visible{outline:3px solid rgba(10,92,54,.25);outline-offset:3px;box-shadow:0 16px 28px rgba(62,48,0,.22);transform:rotate(0) translateY(-2px);}
 .dashboard-sticky-note-priority{justify-self:start;padding:4px 7px;border-radius:999px;background:rgba(255,255,255,.58);font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.04em;}
 .dashboard-sticky-note>strong,.dashboard-sticky-note>span:not(.dashboard-sticky-note-priority),.dashboard-sticky-note>small{overflow-wrap:anywhere;}
-.dashboard-sticky-note>span:not(.dashboard-sticky-note-priority){white-space:pre-wrap;line-height:1.4;}
+.dashboard-sticky-note>strong{font-size:17px;}
+.dashboard-sticky-note>span:not(.dashboard-sticky-note-priority){white-space:pre-wrap;font-family:"Segoe Print","Bradley Hand",cursive;font-size:16px;line-height:1.45;}
 .dashboard-sticky-note>small{opacity:.75;}
+.dashboard-sticky-note-stack{position:relative;width:min(100%,350px);margin:0;}
+.dashboard-sticky-note-stack>summary{position:relative;display:grid;gap:12px;list-style:none;cursor:pointer;}
+.dashboard-sticky-note-stack>summary::-webkit-details-marker{display:none;}
+.dashboard-sticky-note-stack>summary:focus-visible{outline:3px solid rgba(10,92,54,.32);outline-offset:5px;border-radius:5px;}
+.dashboard-sticky-note-stack>summary::before,.dashboard-sticky-note-stack>summary::after{content:"";position:absolute;z-index:0;inset:8px 4px -8px 12px;border:1px solid #dfc34e;border-radius:3px 3px 18px 3px;background:#f8e79b;box-shadow:0 8px 16px rgba(62,48,0,.12);transform:rotate(2.2deg);}
+.dashboard-sticky-note-stack>summary::after{inset:4px 8px -4px 7px;background:#fff0ad;transform:rotate(.8deg);}
+.dashboard-sticky-note-preview{z-index:1;width:100%;pointer-events:none;}
+.dashboard-sticky-note-toggle{position:relative;z-index:2;justify-self:center;display:inline-flex;padding:8px 13px;border:1px solid #c8aa2f;border-radius:999px;background:#fff;color:#725600;font-size:12px;font-weight:900;box-shadow:0 4px 10px rgba(62,48,0,.12);}
+.dashboard-sticky-note-toggle>span:last-child{display:none;}
+.dashboard-sticky-note-stack[open]{width:100%;}
+.dashboard-sticky-note-stack[open] .dashboard-sticky-note-toggle>span:first-child{display:none;}
+.dashboard-sticky-note-stack[open] .dashboard-sticky-note-toggle>span:last-child{display:inline;}
+.dashboard-sticky-note-stack[open]>summary::before,.dashboard-sticky-note-stack[open]>summary::after,.dashboard-sticky-note-stack[open] .dashboard-sticky-note-preview{display:none;}
+.dashboard-sticky-note-expanded{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,330px));gap:24px 18px;max-height:500px;overflow:auto;padding:14px 8px 18px;}
+.dashboard-sticky-note-expanded .dashboard-sticky-note:nth-child(even){transform:rotate(.55deg);}
+.dashboard-sticky-note-expanded .dashboard-sticky-note:nth-child(3n){transform:rotate(-.8deg);}
+.dashboard-sticky-note-expanded .dashboard-sticky-note:hover,.dashboard-sticky-note-expanded .dashboard-sticky-note:focus-visible{transform:rotate(0) translateY(-2px);}
 .dashboard-sticky-note-empty{margin:0;padding:14px;border:1px dashed #d7b83c;border-radius:11px;background:rgba(255,255,255,.62);color:var(--muted);}
 body.dark-theme .dashboard-sticky-notes{border-color:#8b7420;background:linear-gradient(135deg,#342f19,var(--surface));}
 body.dark-theme .dashboard-sticky-notes-heading>span{background:#554916;color:#fde68a;}
 body.dark-theme .dashboard-sticky-note-yellow{border-color:#a68b24;background:#4b4014;color:#fef3c7;}
 body.dark-theme .dashboard-sticky-note-red{border-color:#b45353;background:#4b2020;color:#fee2e2;}
+body.dark-theme .dashboard-sticky-note::before{background:rgba(226,232,240,.34);}
+body.dark-theme .dashboard-sticky-note-stack>summary::before,body.dark-theme .dashboard-sticky-note-stack>summary::after{border-color:#8b7420;background:#3e3618;}
+body.dark-theme .dashboard-sticky-note-toggle{border-color:#8b7420;background:#292612;color:#fde68a;}
 body.dark-theme .dashboard-sticky-note-empty{background:rgba(15,23,42,.38);}
+
+@media(prefers-reduced-motion:reduce){
+    .dashboard-sticky-note{transition:none;}
+}
 
 .dashboard-events{
     display:grid;
