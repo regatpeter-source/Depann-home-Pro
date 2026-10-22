@@ -99,6 +99,7 @@ test("PostgreSQL : les migrations sont checksumées et idempotentes", { skip: !e
     await database.query("CREATE TABLE depannhome_support_requests(id BIGINT PRIMARY KEY)");
     await database.query("CREATE TABLE depannhome_billing_documents(id BIGINT PRIMARY KEY)");
     await database.query("CREATE TABLE depannhome_accounting_settlements(id BIGINT PRIMARY KEY)");
+    await database.query("CREATE TABLE depannhome_clients(owner_id BIGINT NOT NULL,client_id VARCHAR(100) NOT NULL,PRIMARY KEY(owner_id,client_id))");
     const { migrationStatus, runMigrations } = await import("../server/database-migrations.js");
     const first = await runMigrations({ database, logger: { info() {} } });
     const second = await runMigrations({ database, logger: { info() {} } });

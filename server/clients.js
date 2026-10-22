@@ -48,6 +48,21 @@ export async function initializeClients() {
         ON depannhome_clients (owner_id, updated_at DESC)
     `);
     await database.query(`
+        CREATE TABLE IF NOT EXISTS depannhome_client_sticky_notes (
+            id BIGSERIAL PRIMARY KEY,
+            owner_id BIGINT NOT NULL,
+            client_id VARCHAR(100) NOT NULL,
+            created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+            created_by_name VARCHAR(160) NOT NULL DEFAULT '',
+            color VARCHAR(10) NOT NULL DEFAULT 'yellow' CHECK(color IN ('yellow','red')),
+            body VARCHAR(1000) NOT NULL CHECK(CHAR_LENGTH(BTRIM(body)) BETWEEN 1 AND 1000),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT depannhome_client_sticky_notes_client_fk
+                FOREIGN KEY(owner_id,client_id) REFERENCES depannhome_clients(owner_id,client_id) ON DELETE CASCADE
+        )
+    `);
+    await database.query("CREATE INDEX IF NOT EXISTS depannhome_client_sticky_notes_client_idx ON depannhome_client_sticky_notes(owner_id,client_id,color,created_at DESC,id DESC)");
+    await database.query(`
         CREATE TABLE IF NOT EXISTS depannhome_deleted_clients (
             owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
             client_id VARCHAR(100) NOT NULL,
@@ -248,6 +263,54 @@ export function registerClientRoutes(app, requireAuthentication) {
     }));
 
     app.use("/api/clients/:clientId", asyncHandler(requireAssignedMobileClientAccess));
+    app.use("/api/clients/:clientId/sticky-notes", requireAuthentication, requireClientStickyNotePcAccess);
+
+    app.get("/api/clients/:clientId/sticky-notes", requireAuthentication, asyncHandler(async (request, response) => {
+        const clientId = String(request.params.clientId || "");
+        if (!CLIENT_ID_PATTERN.test(clientId)) return response.status(400).json({ message: "Identifiant client invalide." });
+        const ownerId = getAccountOwnerId(request);
+        const database = getPool();
+        const client = await database.query("SELECT 1 FROM depannhome_clients WHERE owner_id=$1 AND client_id=$2", [ownerId, clientId]);
+        if (!client.rowCount) return response.status(404).json({ message: "Dossier client introuvable." });
+        const { rows } = await database.query(`
+            SELECT id, color, body, created_by AS "createdBy", created_by_name AS "createdByName", created_at AS "createdAt"
+            FROM depannhome_client_sticky_notes
+            WHERE owner_id=$1 AND client_id=$2
+            ORDER BY CASE color WHEN 'red' THEN 0 ELSE 1 END, created_at DESC, id DESC
+        `, [ownerId, clientId]);
+        response.json({ stickyNotes: rows });
+    }));
+
+    app.post("/api/clients/:clientId/sticky-notes", requireAuthentication, asyncHandler(async (request, response) => {
+        const clientId = String(request.params.clientId || "");
+        const color = String(request.body?.color || "yellow");
+        const body = String(request.body?.body || "").trim();
+        if (!CLIENT_ID_PATTERN.test(clientId)) return response.status(400).json({ message: "Identifiant client invalide." });
+        if (!new Set(["yellow", "red"]).has(color)) return response.status(400).json({ message: "Couleur de post-it invalide." });
+        if (!body || body.length > 1000) return response.status(400).json({ message: "Le post-it doit contenir entre 1 et 1 000 caractères." });
+        const ownerId = getAccountOwnerId(request);
+        const { rows } = await getPool().query(`
+            INSERT INTO depannhome_client_sticky_notes(owner_id,client_id,created_by,created_by_name,color,body)
+            SELECT owner_id,client_id,$3,$4,$5,$6
+            FROM depannhome_clients
+            WHERE owner_id=$1 AND client_id=$2 AND client_status='active'
+            RETURNING id, color, body, created_by AS "createdBy", created_by_name AS "createdByName", created_at AS "createdAt"
+        `, [ownerId, clientId, request.user.sub, String(request.user.fullName || request.user.username || "Utilisateur").slice(0, 160), color, body]);
+        if (!rows.length) return response.status(404).json({ message: "Dossier client introuvable ou archivé." });
+        response.status(201).json({ stickyNote: rows[0] });
+    }));
+
+    app.delete("/api/clients/:clientId/sticky-notes/:noteId", requireAuthentication, asyncHandler(async (request, response) => {
+        const clientId = String(request.params.clientId || "");
+        const noteId = positiveId(request.params.noteId);
+        if (!CLIENT_ID_PATTERN.test(clientId) || !noteId) return response.status(400).json({ message: "Post-it invalide." });
+        const { rowCount } = await getPool().query(`
+            DELETE FROM depannhome_client_sticky_notes
+            WHERE id=$1 AND owner_id=$2 AND client_id=$3
+        `, [noteId, getAccountOwnerId(request), clientId]);
+        if (!rowCount) return response.status(404).json({ message: "Post-it introuvable." });
+        response.json({ message: "Tâche réalisée : le post-it a été supprimé." });
+    }));
 
     app.put("/api/clients/:clientId", requireAuthentication, requireClientWriteAccess, asyncHandler(async (request, response) => {
         const clientId = String(request.params.clientId || "");
@@ -819,6 +882,11 @@ function clientError(status, message) {
     const error = new Error(message);
     error.status = status;
     return error;
+}
+
+function requireClientStickyNotePcAccess(request, response, next) {
+    if (request.user?.deviceType === "desktop") return next();
+    return response.status(403).json({ message: "Les post-it des dossiers clients sont réservés aux postes PC." });
 }
 
 function sanitizeDeletedAttachmentIds(value) {

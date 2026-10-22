@@ -637,6 +637,7 @@ function renderClientDetail(client, options = {}) {
             <span> ${escapeHtml(client.email || "Non renseigné")}</span>
             <span> ${escapeHtml(formatClientLocation(client))}</span>
         </div>
+        ${renderClientStickyNotesSection(archived)}
         ${hasDistinctInterventionAddress(client) ? `<section class="procedure-section"><h3>Lieu ou adresse d’intervention</h3><p>${escapeHtml(client.interventionAddress)}</p></section>` : ""}
         ${(client.interventionReference || client.insurance || client.insuranceDossier || client.insuranceDeductibleAmountCents || client.mandateNumber || client.claimNumber || client.insuredNumber || client.principal || client.manager || client.expert) ? `<section class="procedure-section"><h3>Assurance / mission partenaire</h3>${client.insuranceDeductibleAmountCents ? `<p class="client-deductible-highlight"><strong>Franchise prévue :</strong> ${escapeHtml(formatClientMoney(client.insuranceDeductibleAmountCents))}<br><small>Montant indicatif à vérifier avec le client lors de l’encaissement.</small></p>` : ""}<div class="procedure-meta">${[["Réf. intervention partenaire", client.interventionReference], ["Assurance", client.insurance], ["Réf. dossier assureur", client.insuranceDossier], ["Mandat", client.mandateNumber || client.mandate], ["Sinistre", client.claimNumber || client.claim], ["N° sociétaire / assuré", client.insuredNumber], ["Mandant / donneur d’ordre", client.principal], ["Gestionnaire", client.manager || client.caseManager], ["Expert", client.expert]].filter(([, value]) => value).map(([label, value]) => `<span><strong>${label} :</strong> ${escapeHtml(value)}</span>`).join("")}</div></section>` : ""}
         <section class="procedure-section">
@@ -679,12 +680,109 @@ function renderClientDetail(client, options = {}) {
         button.addEventListener("click", () => emailClientAttachment(client, button.dataset.emailAttachment));
     });
     bindInterventionAttachmentActions(panel, client);
+    bindClientStickyNotes(panel.querySelector("[data-client-sticky-notes]"), client);
     loadClientFinancialHistory(panel.querySelector("#clientHistory"), client);
 
     const detail = document.createDocumentFragment();
     detail.append(panel);
     detail.append(renderClientMessages(client, options.focusMessages));
     return detail;
+}
+
+function renderClientStickyNotesSection(archived) {
+    if (document.body.dataset.deviceType !== "desktop") return "";
+    return `<section class="procedure-section client-sticky-notes" data-client-sticky-notes>
+            <div class="form-heading">
+                <div><p class="eyebrow">Tâches du dossier</p><h3>Post-it à réaliser</h3></div>
+                <span class="client-sticky-note-count" data-sticky-note-count>…</span>
+            </div>
+            <p class="muted">Ils restent affichés dans ce dossier jusqu’à leur suppression manuelle une fois la tâche réalisée.</p>
+            ${archived ? '<p class="client-sticky-note-archived">Dossier archivé : les post-it existants restent consultables et peuvent être retirés, mais aucune nouvelle tâche ne peut être ajoutée.</p>' : `
+                <form class="client-sticky-note-form" data-sticky-note-form>
+                    <label>Nouvelle tâche<textarea name="body" rows="2" maxlength="1000" required placeholder="Ex. Rappeler le client pour confirmer le rendez-vous"></textarea></label>
+                    <fieldset><legend>Importance</legend><label class="client-sticky-color-yellow"><input type="radio" name="color" value="yellow" checked> Jaune · normal</label><label class="client-sticky-color-red"><input type="radio" name="color" value="red"> Rouge · important</label></fieldset>
+                    <button type="submit" class="secondary-button">Ajouter le post-it</button>
+                </form>
+            `}
+            <p class="auth-message client-sticky-note-feedback" data-sticky-note-feedback aria-live="polite"></p>
+            <div class="client-sticky-note-list" data-sticky-note-list><p class="muted">Chargement des post-it…</p></div>
+        </section>`;
+}
+
+function bindClientStickyNotes(section, client) {
+    if (!section) return;
+    const form = section.querySelector("[data-sticky-note-form]");
+    form?.addEventListener("submit", async event => {
+        event.preventDefault();
+        const submit = form.querySelector('[type="submit"]');
+        const feedback = section.querySelector("[data-sticky-note-feedback]");
+        const formData = new FormData(form);
+        submit.disabled = true;
+        feedback.textContent = "Enregistrement du post-it…";
+        feedback.classList.remove("error");
+        try {
+            await clientStickyNoteRequest(client.id, "", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ body: String(formData.get("body") || "").trim(), color: formData.get("color") })
+            });
+            form.elements.body.value = "";
+            feedback.textContent = "Post-it ajouté au dossier.";
+            await loadClientStickyNotes(section, client);
+        } catch (error) {
+            feedback.textContent = error.message || "Impossible d’ajouter le post-it.";
+            feedback.classList.add("error");
+        } finally {
+            submit.disabled = false;
+        }
+    });
+    void loadClientStickyNotes(section, client);
+}
+
+async function loadClientStickyNotes(section, client) {
+    const list = section.querySelector("[data-sticky-note-list]");
+    const counter = section.querySelector("[data-sticky-note-count]");
+    const feedback = section.querySelector("[data-sticky-note-feedback]");
+    list.innerHTML = '<p class="muted">Chargement des post-it…</p>';
+    try {
+        const payload = await clientStickyNoteRequest(client.id);
+        const notes = Array.isArray(payload.stickyNotes) ? payload.stickyNotes : [];
+        counter.textContent = `${notes.length} post-it${notes.length > 1 ? "s" : ""}`;
+        list.innerHTML = notes.length ? notes.map(note => `
+            <article class="client-sticky-note client-sticky-note-${note.color === "red" ? "red" : "yellow"}">
+                <p>${escapeHtml(note.body)}</p>
+                <footer><small>${escapeHtml(note.createdByName || "Utilisateur")} · ${escapeHtml(formatActivityDate(note.createdAt))}</small><button type="button" class="client-sticky-note-delete" data-delete-sticky-note="${escapeHtml(String(note.id))}">Tâche réalisée · supprimer</button></footer>
+            </article>
+        `).join("") : '<p class="client-sticky-note-empty">Aucun post-it en attente dans ce dossier.</p>';
+        list.querySelectorAll("[data-delete-sticky-note]").forEach(button => {
+            button.addEventListener("click", async () => {
+                if (!confirm("Cette tâche est-elle réalisée ? Le post-it sera supprimé définitivement.")) return;
+                button.disabled = true;
+                feedback.textContent = "Suppression du post-it…";
+                feedback.classList.remove("error");
+                try {
+                    await clientStickyNoteRequest(client.id, button.dataset.deleteStickyNote, { method: "DELETE" });
+                    feedback.textContent = "Tâche réalisée : post-it supprimé.";
+                    await loadClientStickyNotes(section, client);
+                } catch (error) {
+                    feedback.textContent = error.message || "Impossible de supprimer le post-it.";
+                    feedback.classList.add("error");
+                    button.disabled = false;
+                }
+            });
+        });
+    } catch (error) {
+        counter.textContent = "Indisponible";
+        list.innerHTML = `<p class="auth-message error">${escapeHtml(error.message || "Impossible de charger les post-it.")}</p>`;
+    }
+}
+
+async function clientStickyNoteRequest(clientId, noteId = "", options = {}) {
+    const suffix = noteId ? `/${encodeURIComponent(noteId)}` : "";
+    const response = await fetch(`/api/clients/${encodeURIComponent(clientId)}/sticky-notes${suffix}`, { credentials: "same-origin", ...options });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(payload?.message || "Action impossible sur le post-it.");
+    return payload || {};
 }
 
 function openClientAppointment(client) {

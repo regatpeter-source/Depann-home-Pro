@@ -462,6 +462,25 @@ UPDATE depannhome_clients SET client_status='active' WHERE client_status NOT IN 
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='depannhome_clients_status_check') THEN ALTER TABLE depannhome_clients ADD CONSTRAINT depannhome_clients_status_check CHECK (client_status IN ('active','archived')); END IF; END $$;
 CREATE INDEX IF NOT EXISTS depannhome_clients_owner_status_updated_idx ON depannhome_clients (owner_id, client_status, updated_at DESC);
 
+-- Tâches visuelles du dossier : elles ne sont retirées que par une suppression
+-- manuelle lorsque le travail est réalisé.
+CREATE TABLE IF NOT EXISTS depannhome_client_sticky_notes (
+    id BIGSERIAL PRIMARY KEY,
+    owner_id BIGINT NOT NULL,
+    client_id VARCHAR(100) NOT NULL,
+    created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    created_by_name VARCHAR(160) NOT NULL DEFAULT '',
+    color VARCHAR(10) NOT NULL DEFAULT 'yellow' CHECK(color IN ('yellow','red')),
+    body VARCHAR(1000) NOT NULL CHECK(CHAR_LENGTH(BTRIM(body)) BETWEEN 1 AND 1000),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT depannhome_client_sticky_notes_client_fk
+        FOREIGN KEY(owner_id,client_id)
+        REFERENCES depannhome_clients(owner_id,client_id)
+        ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS depannhome_client_sticky_notes_client_idx
+    ON depannhome_client_sticky_notes(owner_id,client_id,color,created_at DESC,id DESC);
+
 CREATE TABLE IF NOT EXISTS depannhome_deleted_clients (
     owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
     client_id VARCHAR(100) NOT NULL,

@@ -1,5 +1,5 @@
 import { ROUTES } from "./config.js?v=116";
-import { getSearchableClients } from "./clients.js?v=178";
+import { getSearchableClients } from "./clients.js?v=179";
 import { addClientActivityByName } from "./client-sync.js?v=132";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -197,11 +197,11 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=new-quote]")?.addEventListener("click", () => { if (!isAccountant()) openNewDocument("quote"); });
     panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => { if (!isAccountant()) openNewDocument("invoice"); });
     panel.querySelector("[data-billing-action=open-leak-reports]")?.addEventListener("click", async () => {
-        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=68");
+        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=69");
         renderLeakReportWizard();
     });
     panel.querySelector("[data-billing-action=new-leak-report]")?.addEventListener("click", async () => {
-        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=68");
+        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=69");
         openLeakReportCreation();
     });
     panel.querySelector("[data-billing-action=download-quote-template]")?.addEventListener("click", openQuoteTemplateDownload);
@@ -210,7 +210,7 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=preview-blank-quote]")?.addEventListener("click", openBlankQuotePreview);
     panel.querySelector("[data-billing-action=manage-line-templates]")?.addEventListener("click", () => renderBilling({ templates: true }));
     panel.querySelector("[data-billing-action=open-purchases]")?.addEventListener("click", async () => {
-        const { renderPurchases } = await import("./purchases.js?v=131");
+        const { renderPurchases } = await import("./purchases.js?v=132");
         renderPurchases();
     });
     panel.querySelector("[data-billing-action=open-profitability]")?.addEventListener("click", () => renderBusinessSuite({ tab: "profitability" }));
