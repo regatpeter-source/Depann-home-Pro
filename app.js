@@ -65,6 +65,10 @@ const port = Number(process.env.PORT || 3000);
 
 app.set("trust proxy", 1);
 app.use(helmet({ contentSecurityPolicy: contentSecurityPolicy(), crossOriginEmbedderPolicy: false }));
+app.use("/api", (request, response, next) => {
+	response.set({ "Cache-Control": "private, no-store", Pragma: "no-cache", Expires: "0" });
+	next();
+});
 app.use("/api", rateLimit({
 	windowMs: 15 * 60 * 1000,
 	limit: 1200,

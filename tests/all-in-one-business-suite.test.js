@@ -94,7 +94,7 @@ test("les fonctions métier sont rangées dans Ressources, Clients et Devis & ra
     assert.match(module, /tab === "portal" \? ROUTES\.clients : tab === "profitability" \? ROUTES\.billing/);
     assert.match(navigation, /clientWorkspace === "portal"/);
     assert.match(navigation, /billingWorkspace === "profitability"/);
-    assert.match(worker, /business-suite\.js\?v=2/);
+    assert.match(worker, /business-suite\.js\?v=4/);
     assert.match(app, /registerCustomerPortalRoutes/);
     assert.match(app, /registerBusinessSuiteRoutes/);
     assert.match(app, /registerAutomationRoutes/);

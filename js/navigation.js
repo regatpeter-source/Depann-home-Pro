@@ -4,7 +4,7 @@ import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreato
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=223";
 import { renderAccounting } from "./accounting.js?v=34";
 import { renderPurchases } from "./purchases.js?v=132";
-import { renderBusinessSuite } from "./business-suite.js?v=2";
+import { renderBusinessSuite } from "./business-suite.js?v=4";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=9";
 import { renderHistoryAndJournals } from "./history.js?v=2";
 import { renderPartnerMissions } from "./partner-missions.js?v=102";
@@ -64,7 +64,7 @@ let currentApplicationHistoryKey = "";
 
 export function initializeNavigation(loadedDatabase) {
     database = loadedDatabase;
-    initializeApplicationHistory();
+    const initialApplicationHistoryEntry = initializeApplicationHistory();
     ensureMobileHomeNavigationButton();
     ensureMobileLibraryQuickAction();
     configureLibrary({
@@ -104,6 +104,7 @@ export function initializeNavigation(loadedDatabase) {
     window.addEventListener("depannhome:clients-synchronized", () => {
         refreshClientMessageAlert();
         if (document.querySelector(".nav-button.active")?.dataset.nav !== ROUTES.clients) return;
+        if (document.querySelector('[data-suite-view="portal"]')) return;
         const currentView = getCurrentClientView();
         if (isClientFormView(currentView)) return;
         if (!currentView.selectedId && refreshClientDirectoryAfterSynchronization()) return;
@@ -140,6 +141,7 @@ export function initializeNavigation(loadedDatabase) {
     }
     const openedDetachedWorkspace = initializeDesktopWorkspace({ open: openDesktopWorkspaceItem });
     if (openedDetachedWorkspace) return;
+    if (restoreInitialApplicationHistory(initialApplicationHistoryEntry)) return;
     if (isAccountant() && canAccessRoute(ROUTES.billing)) renderBilling();
     else if (isAccountant() && canAccessRoute(ROUTES.accounting)) renderAccounting();
     else if (isCommercialMobile()) openCalendar();
@@ -158,7 +160,8 @@ function openDesktopWorkspaceItem(item) {
 function initializeApplicationHistory() {
     const pageTitle = document.getElementById("pageTitle");
     const backButton = document.getElementById("appBackButton");
-    if (!pageTitle || !backButton || pageTitle.dataset.historyBound === "true") return;
+    if (!pageTitle || !backButton || pageTitle.dataset.historyBound === "true") return null;
+    const initialEntry = window.history.state;
     pageTitle.dataset.historyBound = "true";
 
     const recordPage = () => recordApplicationHistory(pageTitle.textContent.trim());
@@ -171,8 +174,29 @@ function initializeApplicationHistory() {
         updateApplicationBackButton(entry.depth || 0);
         restoreApplicationRoute(entry);
     });
+    window.addEventListener("depannhome:workspace-item", event => recordWorkspaceApplicationHistory(event.detail));
+    window.addEventListener("depannhome:application-view-changed", () => window.queueMicrotask(replaceCurrentApplicationHistoryView));
     backButton.addEventListener("click", () => window.history.back());
-    window.queueMicrotask(recordPage);
+    return initialEntry;
+}
+
+function restoreInitialApplicationHistory(entry) {
+    if (entry?.application !== APPLICATION_HISTORY_MARKER || !canRestoreApplicationHistoryEntry(entry)) return false;
+    applicationHistoryReady = true;
+    restoringApplicationHistory = true;
+    currentApplicationHistoryKey = entry.key || "";
+    updateApplicationBackButton(Number(entry.depth) || 0);
+    restoreApplicationRoute(entry);
+    return true;
+}
+
+function canRestoreApplicationHistoryEntry(entry) {
+    const route = String(entry?.route || "");
+    if (!route || !canOpenWorkspaceRoute(route)) return false;
+    if (route === ROUTES.clients && entry.view?.clientWorkspace === "portal") {
+        return isDesktopDevice() && ["admin", "pc_standard", "commercial"].includes(document.body.dataset.role);
+    }
+    return true;
 }
 
 function recordApplicationHistory(title) {
@@ -180,6 +204,10 @@ function recordApplicationHistory(title) {
     const route = inferApplicationRoute(title);
     if (document.body.dataset.supportControl === "true") window.dispatchEvent(new CustomEvent("depannhome:route-changed", { detail: { route } }));
     const view = captureApplicationView(route, title);
+    writeApplicationHistory(route, title, view);
+}
+
+function writeApplicationHistory(route, title, view) {
     const key = `${route}:${title}:${JSON.stringify(view)}`;
     if (!applicationHistoryReady) {
         applicationHistoryReady = true;
@@ -211,6 +239,25 @@ function recordApplicationHistory(title) {
     announceApplicationView(entry, title);
 }
 
+function recordWorkspaceApplicationHistory(item) {
+    if (!applicationHistoryReady || !item || typeof item !== "object") return;
+    if (item.type === "client" && item.id) return writeApplicationHistory(ROUTES.clients, document.getElementById("pageTitle")?.textContent.trim() || "Clients", { selectedId: String(item.id) });
+    if (item.type === "mission" && item.id) return writeApplicationHistory(ROUTES.partnerMissions, item.title || "Missions partenaires", { missionId: String(item.id) });
+    if (item.type === "route" && item.route && canOpenWorkspaceRoute(item.route)) writeApplicationHistory(item.route, item.title || document.getElementById("pageTitle")?.textContent.trim() || "", item.view || {});
+}
+
+function replaceCurrentApplicationHistoryView() {
+    if (!applicationHistoryReady || window.history.state?.application !== APPLICATION_HISTORY_MARKER) return;
+    const title = document.getElementById("pageTitle")?.textContent.trim() || "";
+    if (!title) return;
+    const route = inferApplicationRoute(title);
+    const view = captureApplicationView(route, title);
+    const key = `${route}:${title}:${JSON.stringify(view)}`;
+    const entry = { application: APPLICATION_HISTORY_MARKER, depth: Number(window.history.state?.depth) || 0, route, key, view };
+    currentApplicationHistoryKey = key;
+    window.history.replaceState(entry, "");
+}
+
 function announceApplicationView(entry, title) {
     const identity = workspaceViewIdentity(entry.route, title, entry.view);
     window.dispatchEvent(new CustomEvent("depannhome:application-view", { detail: {
@@ -234,7 +281,8 @@ function workspaceViewIdentity(route, title, view) {
 
 function captureApplicationView(route, title) {
     if (route === ROUTES.clients) {
-    if (document.querySelector('[data-suite-view="portal"]')) return { clientWorkspace: "portal" };
+    const portal = document.querySelector('[data-suite-view="portal"]');
+    if (portal) return { clientWorkspace: "portal", selectedClientId: document.querySelector('[data-portal-form] [name="clientId"]')?.value || portal.dataset.suiteSelectedClient || "" };
         const selectedId = document.querySelector("[data-client-detail-id]")?.dataset.clientDetailId || "";
         const editId = document.querySelector('#clientForm input[name="id"]')?.value || "";
         const clientWorkspace = document.querySelector('[data-client-workspace][aria-current="page"]')?.dataset.clientWorkspace || "";
@@ -256,8 +304,12 @@ function captureApplicationView(route, title) {
         return { settingsSection, templateType };
     }
     if (route === ROUTES.calendar && title === "Retrouver une intervention") return { workspace: "intervention-search" };
-    if (route === ROUTES.billing && document.querySelector('[data-suite-view="profitability"]')) return { billingWorkspace: "profitability" };
-    if (route === ROUTES.businessSuite) return { businessSuiteTab: document.querySelector("[data-suite-tab].active")?.dataset.suiteTab || "assets" };
+    if (route === ROUTES.accounting) return { accountingSection: document.querySelector("[data-accounting-section].active")?.dataset.accountingSection || "dashboard" };
+    if (route === ROUTES.billing && document.querySelector('[data-suite-view="profitability"]')) return { billingWorkspace: "profitability", selectedEventId: document.querySelector("[data-profit-event]")?.value || document.querySelector('[data-suite-view="profitability"]')?.dataset.suiteSelectedEvent || "" };
+    if (route === ROUTES.businessSuite) return {
+        businessSuiteTab: document.querySelector("[data-suite-tab].active")?.dataset.suiteTab || document.querySelector("[data-suite-view]")?.dataset.suiteView || "assets",
+        selectedClientId: document.querySelector("[data-assets-client]")?.value || document.querySelector("[data-suite-view]")?.dataset.suiteSelectedClient || ""
+    };
     if (route === ROUTES.search) return { query: document.getElementById("search")?.value || "" };
     return {};
 }
@@ -313,15 +365,15 @@ function restoreApplicationRoute(entry) {
     if (route === ROUTES.calendar && view.calendarEventId) return renderCalendar({ date: view.calendarDate ? new Date(`${view.calendarDate}T12:00:00`) : new Date(), eventId: view.calendarEventId });
     if (route === ROUTES.calendar) return openCalendar();
     if (route === ROUTES.operationsMap) return renderOperationsMap();
-    if (route === ROUTES.clients && view.clientWorkspace === "portal") return renderBusinessSuite({ tab: "portal" });
+    if (route === ROUTES.clients && view.clientWorkspace === "portal") return renderBusinessSuite({ tab: "portal", clientId: view.selectedClientId });
     if (route === ROUTES.clients) return renderClientHistoryView(view);
-    if (route === ROUTES.billing && view.billingWorkspace === "profitability") return renderBusinessSuite({ tab: "profitability" });
+    if (route === ROUTES.billing && view.billingWorkspace === "profitability") return renderBusinessSuite({ tab: "profitability", eventId: view.selectedEventId });
     if (route === ROUTES.billing) return isTechnician() && organizationFeatureEnabled("technicalReports") ? renderTechnicalReports() : renderBilling(view.documentId ? { documentId: view.documentId } : {});
     if (route === ROUTES.accounting) return renderAccounting(view.accountingSection || undefined);
     if (route === ROUTES.purchases) return renderPurchases(view.purchaseId ? { purchaseId: view.purchaseId } : {});
-    if (route === ROUTES.businessSuite) return renderBusinessSuite({ tab: view.businessSuiteTab });
+    if (route === ROUTES.businessSuite) return renderBusinessSuite({ tab: view.businessSuiteTab, clientId: view.selectedClientId });
     if (route === ROUTES.groups) return renderGroupWorkspace();
-    if (route === ROUTES.partnerMissions) return renderPartnerMissions();
+    if (route === ROUTES.partnerMissions) return renderPartnerMissions(view.missionId ? { missionId: view.missionId } : {});
     if (route === ROUTES.companyEmail) return renderCompanyEmail();
     if (route === ROUTES.partnerSandbox) return renderPartnerSandbox();
     if (route === ROUTES.technicalReports) return renderTechnicalReports(Number(view.reportId) || 0);
@@ -377,7 +429,7 @@ export async function refreshSharedData(options = {}) {
     }
     const requests = canAccessRoute(ROUTES.billing) ? [synchronizeBillingDocuments({ refreshView: !options.silent, force: Boolean(options.forceBilling) })] : [];
     if (isTechnician() && canAccessRoute(ROUTES.calendar)) requests.unshift(refreshTechnicianCalendarAlert());
-    if (!isAccountant() && !isCommercialMobile()) requests.unshift(refreshVisibleClientMessages());
+    if (!isAccountant() && !isCommercialMobile()) requests.unshift(options.refreshVisibleMessages ? refreshVisibleClientMessages() : refreshClientMessageAlert());
     if (options.includeClients && !isAccountant() && !isCommercialMobile()) requests.push(synchronizeClients());
     sharedSynchronizationPromise = Promise.all(requests).finally(() => {
         sharedSynchronizationPromise = null;
@@ -394,7 +446,7 @@ function bindSilentInteractionSynchronization() {
         window.clearTimeout(interactionSynchronizationTimer);
         interactionSynchronizationTimer = window.setTimeout(() => {
             interactionSynchronizationTimer = null;
-            refreshSharedData({ includeClients: true, silent: true }).catch(() => {});
+            refreshSharedData({ silent: true, refreshVisibleMessages: false }).catch(() => {});
         }, INTERACTION_SYNCHRONIZATION_DELAY);
     };
     document.addEventListener("click", schedule, { capture: true });
@@ -404,10 +456,16 @@ function bindSilentInteractionSynchronization() {
 export async function refreshApplication() {
     if (await refreshOrganizationAccess()) return { refreshed: true, accessChanged: true };
     const activeRoute = document.querySelector(".nav-button.active")?.dataset.nav || "";
-    await refreshSharedData({ includeClients: true, forceBilling: true });
+    const recordedEntry = window.history.state?.application === APPLICATION_HISTORY_MARKER ? window.history.state : null;
+    await refreshSharedData({ includeClients: true, forceBilling: true, refreshVisibleMessages: true });
 
     if (activeRoute && MENU_ACCESS.navigation[activeRoute] && !canAccessRoute(activeRoute)) {
         openHome();
+        return { refreshed: true };
+    }
+
+    if (recordedEntry?.route === activeRoute && Object.values(recordedEntry.view || {}).some(Boolean)) {
+        restoreApplicationRoute(recordedEntry);
         return { refreshed: true };
     }
 

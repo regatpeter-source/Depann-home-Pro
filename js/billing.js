@@ -8,7 +8,7 @@ import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
 import { openDocumentDeliveryChoice } from "./document-delivery.js?v=2";
 import { pageSizeOptions, paginateItems, renderBusinessPagination } from "./pagination.js?v=1";
 import { renderLivePdfPreview } from "./pdf-live-preview.js?v=2";
-import { renderBusinessSuite } from "./business-suite.js?v=2";
+import { renderBusinessSuite } from "./business-suite.js?v=4";
 import { markDesktopWorkspaceDraftSaved } from "./desktop-workspace.js?v=5";
 
 const CUSTOMER_TYPES = ["Particulier", "Professionnel", "Magasin", "Autre"];

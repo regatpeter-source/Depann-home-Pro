@@ -5,12 +5,16 @@ import { markDesktopWorkspaceDraftSaved } from "./desktop-workspace.js?v=5";
 
 let context = { clients: [], documents: [], events: [], purchases: [] };
 let activeTab = "overview";
+let selectedClientId = "";
+let selectedEventId = "";
 
 export async function renderBusinessSuite(options = {}) {
     activeTab = normalizedTab(options.tab || activeTab);
+    if (options.clientId !== undefined) selectedClientId = String(options.clientId || "");
+    if (options.eventId !== undefined) selectedEventId = String(options.eventId || "");
     setPage(pageTitle(activeTab), pageRoute(activeTab), "business-suite");
     const container = getContainer();
-    container.innerHTML = '<section class="business-suite-shell"><p class="muted">Chargement des données métier…</p></section>';
+    container.innerHTML = `<section class="business-suite-shell" data-suite-view="${activeTab}" data-suite-selected-client="${escapeHtml(selectedClientId)}" data-suite-selected-event="${escapeHtml(selectedEventId)}"><p class="muted">Chargement des données métier…</p></section>`;
     try {
         context = await api("/api/business-suite/overview");
         renderShell(container);
@@ -25,7 +29,7 @@ function renderShell(container) {
         : activeTab === "profitability"
             ? '<p class=eyebrow>Devis & rapports</p><h2>Rentabilité des interventions</h2><p>Mesurez la marge réelle à partir de la facturation, du temps, des pièces et des achats.</p>'
             : '<p class=eyebrow>Ressources</p><h2>Sites, équipements, stocks et véhicules</h2><p>Gérez les moyens nécessaires aux interventions dans un espace métier unique.</p>';
-    container.innerHTML = `<section class="business-suite-shell" data-suite-view="${activeTab}"><header class="business-suite-hero"><div>${hero}</div></header>${resourceView ? `<nav class="business-suite-tabs" aria-label="Ressources métier">${resourceTabs().map(([id, label]) => `<button type=button data-suite-tab=${id} class="${id === activeTab ? "active" : ""}">${label}</button>`).join("")}</nav>` : ""}<div data-suite-content></div></section>`;
+    container.innerHTML = `<section class="business-suite-shell" data-suite-view="${activeTab}" data-suite-selected-client="${escapeHtml(selectedClientId)}" data-suite-selected-event="${escapeHtml(selectedEventId)}"><header class="business-suite-hero"><div>${hero}</div></header>${resourceView ? `<nav class="business-suite-tabs" aria-label="Ressources métier">${resourceTabs().map(([id, label]) => `<button type=button data-suite-tab=${id} class="${id === activeTab ? "active" : ""}">${label}</button>`).join("")}</nav>` : ""}<div data-suite-content></div></section>`;
     container.querySelectorAll("[data-suite-tab]").forEach(button => button.addEventListener("click", () => { activeTab = button.dataset.suiteTab; renderShell(container); }));
     const content = container.querySelector("[data-suite-content]");
     if (activeTab === "portal") return renderPortal(content);
@@ -39,12 +43,14 @@ function renderShell(container) {
 async function renderPortal(container) {
     container.innerHTML = `<div class=business-grid><article class=business-panel><h3>Créer un lien client sécurisé</h3><form data-portal-form class=form-grid><label class=form-wide>Client<select name=clientId required>${clientOptions()}</select></label><fieldset class=form-wide data-document-choices><legend>Documents accessibles</legend></fieldset><label>Durée<select name=durationDays><option value=7>7 jours</option><option value=14 selected>14 jours</option><option value=30>30 jours</option><option value=90>90 jours</option></select></label><label><input type=checkbox name=allowQuoteDecision checked> Autoriser la décision sur les devis</label><label class=form-wide>Libellé<input name=label maxlength=160 placeholder="Ex. Documents chantier rue Victor-Hugo"></label><button type=submit>Créer le lien</button></form><div data-portal-result></div></article><article class=business-panel><h3>Liens et décisions</h3><div data-portal-links><p class=muted>Sélectionnez un client.</p></div></article></div>`;
     const form = container.querySelector("[data-portal-form]"), client = form.elements.clientId;
+    if ([...client.options].some(option => option.value === selectedClientId)) client.value = selectedClientId;
     const refreshChoices = () => {
+        selectedClientId = client.value;
         const documents = context.documents.filter(document => document.clientId === client.value);
         container.querySelector("[data-document-choices]").innerHTML = `<legend>Documents accessibles</legend>${documents.map(document => `<label><input type=checkbox name=documentIds value=${document.id}> ${escapeHtml(document.documentType === "quote" ? "Devis" : "Facture")} ${escapeHtml(document.documentNumber)}</label>`).join("") || "<p class=muted>Aucun devis ou facture pour ce client.</p>"}`;
         void loadPortalRecords(container, client.value);
     };
-    client.addEventListener("change", refreshChoices); refreshChoices();
+    client.addEventListener("change", () => { refreshChoices(); announceViewChange(); }); refreshChoices();
     form.addEventListener("submit", async event => {
         event.preventDefault();
         const data = new FormData(form), result = container.querySelector("[data-portal-result]");
@@ -71,7 +77,8 @@ async function loadPortalRecords(container, clientId) {
 async function renderAssets(container) {
     container.innerHTML = `<article class=business-panel><label>Client<select data-assets-client>${clientOptions()}</select></label><div data-assets-workspace></div></article>`;
     const select = container.querySelector("[data-assets-client]");
-    select.addEventListener("change", () => loadAssets(container, select.value));
+    if ([...select.options].some(option => option.value === selectedClientId)) select.value = selectedClientId;
+    select.addEventListener("change", () => { selectedClientId = select.value; announceViewChange(); loadAssets(container, select.value); });
     await loadAssets(container, select.value);
 }
 
@@ -116,11 +123,12 @@ function renderProfitability(container) {
     const canConfigure = ["admin", "pc_standard", "mobile_admin"].includes(document.body.dataset.role);
     container.innerHTML = `<div class=business-grid><article class=business-panel><h3>Rentabilité réelle d’une intervention</h3><p class=muted>Chiffre d’affaires HT des factures émises moins temps valorisé, pièces consommées et achats affectés.</p><label>Intervention<select data-profit-event>${optionList(context.events, "title")}</select></label><div data-profit-result></div></article><article class=business-panel><h3>Affecter un achat</h3><form data-purchase-allocation class=form-grid><label>Achat<select name=purchaseId required>${optionList(context.purchases || [], "description")}</select></label><label>Intervention<select name=eventId required>${optionList(context.events, "title")}</select></label><button type=submit>Affecter au coût réel</button></form>${canConfigure ? `<h3>Coûts horaires chargés</h3><form data-labor-cost class=form-grid><label>Rôle<select name=role><option value=technician>Technicien</option><option value=team_lead>Chef d’équipe</option><option value=mobile_admin>Admin mobile</option></select></label><label>Coût horaire<input name=hourlyCost type=number min=0 step=.01 required></label><button type=submit>Enregistrer</button></form>` : ""}</article></div>`;
     const select = container.querySelector("[data-profit-event]"), result = container.querySelector("[data-profit-result]");
+    if ([...select.options].some(option => option.value === selectedEventId)) select.value = selectedEventId;
     const load = async () => {
         if (!select.value) { result.innerHTML = "<p class=muted>Sélectionnez une intervention.</p>"; return; }
         try { const { profitability: item } = await api(`/api/business-suite/events/${select.value}/profitability`); result.innerHTML = `<div class=business-metrics><article><strong>${moneyLabel(item.revenueHt)}</strong><span>CA HT</span></article><article><strong>${moneyLabel(item.laborCost)}</strong><span>Main-d’œuvre (${numberLabel(item.laborHours)} h)</span></article><article><strong>${moneyLabel(item.partsCost + item.purchasesCost)}</strong><span>Pièces et achats</span></article><article><strong class="${item.margin < 0 ? "negative" : "positive"}">${moneyLabel(item.margin)}</strong><span>Marge${item.marginRate === null ? "" : ` · ${numberLabel(item.marginRate)} %`}</span></article></div>`; } catch (error) { result.innerHTML = `<p class=error>${escapeHtml(error.message)}</p>`; }
     };
-    select.addEventListener("change", load); void load();
+    select.addEventListener("change", () => { selectedEventId = select.value; announceViewChange(); void load(); }); void load();
     container.querySelector("[data-purchase-allocation]").addEventListener("submit", async event => { event.preventDefault(); const data=new FormData(event.currentTarget); await api(`/api/business-suite/purchases/${data.get("purchaseId")}/event`,{method:"PATCH",body:{eventId:Number(data.get("eventId"))}}); markDesktopWorkspaceDraftSaved(); if(String(select.value)===String(data.get("eventId"))) await load(); });
     container.querySelector("[data-labor-cost]")?.addEventListener("submit", async event => { event.preventDefault(); const data=new FormData(event.currentTarget); await api(`/api/business-suite/labor-costs/${encodeURIComponent(data.get("role"))}`,{method:"PUT",body:{hourlyCost:Number(data.get("hourlyCost"))}}); markDesktopWorkspaceDraftSaved(); if(select.value) await load(); });
 }
@@ -137,7 +145,8 @@ function clientOptions() { return `<option value="">Choisir un client</option>${
 function optionList(items, field="name") { return `<option value="">Aucun / choisir</option>${items.map(item => `<option value=${item.id}>${escapeHtml(item[field] || item.documentNumber || item.id)}${item.eventDate ? ` · ${escapeHtml(item.eventDate)}` : ""}</option>`).join("")}`; }
 function resourceTabs() { return [["assets","Sites & équipements"],["inventory","Stock"],["vehicles","Véhicules"]]; }
 function normalizedTab(value) { return ["portal", "profitability", ...resourceTabs().map(([id]) => id)].includes(value) ? value : "assets"; }
+function announceViewChange() { window.dispatchEvent(new CustomEvent("depannhome:application-view-changed")); }
 function pageTitle(tab) { return tab === "portal" ? "Clients · Portail client" : tab === "profitability" ? "Devis & rapports · Rentabilité" : `Ressources · ${resourceTabs().find(([id]) => id === tab)?.[1] || "Sites & équipements"}`; }
 function pageRoute(tab) { return tab === "portal" ? ROUTES.clients : tab === "profitability" ? ROUTES.billing : ROUTES.businessSuite; }
-async function api(url, options={}) { const response=await fetch(url,{method:options.method||"GET",credentials:"same-origin",headers:options.body?{"Content-Type":"application/json"}:undefined,body:options.body?JSON.stringify(options.body):undefined}); if(response.status===204)return null; const payload=await response.json().catch(()=>({})); if(!response.ok)throw new Error(payload.message||"Opération impossible."); return payload; }
+async function api(url, options={}) { const method=options.method||"GET"; const response=await fetch(url,{method,credentials:"same-origin",cache:method==="GET"?"no-store":undefined,headers:options.body?{"Content-Type":"application/json"}:undefined,body:options.body?JSON.stringify(options.body):undefined}); if(response.status===204)return null; const payload=await response.json().catch(()=>({})); if(!response.ok)throw new Error(payload.message||"Opération impossible."); return payload; }
 function renderFailure(container,error){container.innerHTML=`<article class=business-panel><p class=error>${escapeHtml(error.message||"Chargement impossible.")}</p></article>`;} function dateLabel(value){return value?new Date(value).toLocaleDateString("fr-FR"):"—";} function numberLabel(value){return new Intl.NumberFormat("fr-FR",{maximumFractionDigits:3}).format(Number(value)||0);} function moneyLabel(value){return new Intl.NumberFormat("fr-FR",{style:"currency",currency:"EUR"}).format(Number(value)||0);}
