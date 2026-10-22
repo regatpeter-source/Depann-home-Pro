@@ -35,21 +35,30 @@ test("l’API réserve toutes les opérations aux postes PC et filtre par propri
 test("la fiche client crée des post-it jaunes ou rouges et ne les retire que manuellement", () => {
     assert.match(client, /function renderClientStickyNotesSection[\s\S]*document\.body\.dataset\.deviceType !== "desktop"[\s\S]*return ""/);
     assert.match(client, /Post-it à réaliser/);
+    assert.match(client, /data-sticky-note-toggle aria-expanded="false"/);
+    assert.match(client, /data-sticky-note-composer hidden/);
+    assert.match(client, /Texte du post-it[\s\S]*Couleur/);
     assert.match(client, /value="yellow" checked/);
     assert.match(client, /value="red"/);
     assert.match(client, /Tâche réalisée · supprimer/);
     assert.match(client, /method: "DELETE"/);
     assert.match(client, /Cette tâche est-elle réalisée \? Le post-it sera supprimé définitivement\./);
     assert.match(client, /escapeHtml\(note\.body\)/);
+    assert.match(client, /composer\.hidden = !opening/);
+    assert.match(client, /form\.reset\(\);[\s\S]*closeComposer\(\)/);
     assert.doesNotMatch(server, /expires_at[\s\S]{0,200}depannhome_client_sticky_notes|DELETE FROM depannhome_client_sticky_notes[\s\S]{0,200}(?:interval|created_at\s*[<>])/i);
 });
 
 test("les cartes jaunes et rouges restent lisibles sur un écran PC étroit et en thème sombre", () => {
     assert.match(style, /\.client-sticky-note-yellow\{[^}]*background:#fef3c7/);
     assert.match(style, /\.client-sticky-note-red\{[^}]*background:#fee2e2/);
-    assert.match(style, /@media\(max-width:760px\)[\s\S]*\.client-sticky-note-list\{grid-template-columns:1fr/);
+    assert.match(style, /\.client-sticky-note-list\{[^}]*grid-template-columns:repeat\(auto-fill,240px\)[^}]*justify-content:start/);
+    assert.match(style, /\.client-sticky-note\{[^}]*width:240px[^}]*aspect-ratio:1/);
+    assert.match(style, /\.client-sticky-note > p\{[^}]*overflow:auto/);
+    assert.match(style, /@media\(max-width:760px\)[\s\S]*\.client-sticky-note-list\{grid-template-columns:minmax\(0,240px\)/);
     assert.match(style, /dark-theme \.client-sticky-note-yellow/);
     assert.match(style, /dark-theme \.client-sticky-note-red/);
+    assert.match(style, /\.client-sticky-note-composer\{[^}]*position:absolute[^}]*box-shadow/);
 });
 
 test("la synthèse PC du tableau de bord est isolée par entreprise et ouvre le dossier client", () => {

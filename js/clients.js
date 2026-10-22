@@ -694,15 +694,20 @@ function renderClientStickyNotesSection(archived) {
     return `<section class="procedure-section client-sticky-notes" data-client-sticky-notes>
             <div class="form-heading">
                 <div><p class="eyebrow">Tâches du dossier</p><h3>Post-it à réaliser</h3></div>
-                <span class="client-sticky-note-count" data-sticky-note-count>…</span>
+                <div class="client-sticky-note-heading-actions">
+                    <span class="client-sticky-note-count" data-sticky-note-count>…</span>
+                    ${archived ? "" : '<button type="button" class="secondary-button" data-sticky-note-toggle aria-expanded="false" aria-controls="clientStickyNoteComposer">+ Ajouter un post-it</button>'}
+                </div>
             </div>
             <p class="muted">Ils restent affichés dans ce dossier jusqu’à leur suppression manuelle une fois la tâche réalisée.</p>
             ${archived ? '<p class="client-sticky-note-archived">Dossier archivé : les post-it existants restent consultables et peuvent être retirés, mais aucune nouvelle tâche ne peut être ajoutée.</p>' : `
-                <form class="client-sticky-note-form" data-sticky-note-form>
-                    <label>Nouvelle tâche<textarea name="body" rows="2" maxlength="1000" required placeholder="Ex. Rappeler le client pour confirmer le rendez-vous"></textarea></label>
-                    <fieldset><legend>Importance</legend><label class="client-sticky-color-yellow"><input type="radio" name="color" value="yellow" checked> Jaune · normal</label><label class="client-sticky-color-red"><input type="radio" name="color" value="red"> Rouge · important</label></fieldset>
-                    <button type="submit" class="secondary-button">Ajouter le post-it</button>
-                </form>
+                <div class="client-sticky-note-composer" id="clientStickyNoteComposer" data-sticky-note-composer hidden>
+                    <form class="client-sticky-note-form" data-sticky-note-form>
+                        <label>Texte du post-it<textarea name="body" rows="3" maxlength="1000" required placeholder="Ex. Rappeler le client pour confirmer le rendez-vous"></textarea></label>
+                        <fieldset><legend>Couleur</legend><label class="client-sticky-color-yellow"><input type="radio" name="color" value="yellow" checked> Jaune</label><label class="client-sticky-color-red"><input type="radio" name="color" value="red"> Rouge</label></fieldset>
+                        <div class="client-sticky-note-form-actions"><button type="button" class="secondary-button" data-sticky-note-cancel>Annuler</button><button type="submit" class="secondary-button">Ajouter</button></div>
+                    </form>
+                </div>
             `}
             <p class="auth-message client-sticky-note-feedback" data-sticky-note-feedback aria-live="polite"></p>
             <div class="client-sticky-note-list" data-sticky-note-list><p class="muted">Chargement des post-it…</p></div>
@@ -712,6 +717,25 @@ function renderClientStickyNotesSection(archived) {
 function bindClientStickyNotes(section, client) {
     if (!section) return;
     const form = section.querySelector("[data-sticky-note-form]");
+    const toggle = section.querySelector("[data-sticky-note-toggle]");
+    const composer = section.querySelector("[data-sticky-note-composer]");
+    const closeComposer = () => {
+        if (!toggle || !composer) return;
+        composer.hidden = true;
+        toggle.setAttribute("aria-expanded", "false");
+    };
+    toggle?.addEventListener("click", () => {
+        const opening = composer.hidden;
+        composer.hidden = !opening;
+        toggle.setAttribute("aria-expanded", String(opening));
+        if (opening) window.requestAnimationFrame(() => form.elements.body.focus());
+    });
+    section.querySelector("[data-sticky-note-cancel]")?.addEventListener("click", closeComposer);
+    composer?.addEventListener("keydown", event => {
+        if (event.key !== "Escape") return;
+        closeComposer();
+        toggle.focus();
+    });
     form?.addEventListener("submit", async event => {
         event.preventDefault();
         const submit = form.querySelector('[type="submit"]');
@@ -726,7 +750,8 @@ function bindClientStickyNotes(section, client) {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ body: String(formData.get("body") || "").trim(), color: formData.get("color") })
             });
-            form.elements.body.value = "";
+            form.reset();
+            closeComposer();
             feedback.textContent = "Post-it ajouté au dossier.";
             await loadClientStickyNotes(section, client);
         } catch (error) {
