@@ -1,18 +1,18 @@
 import { APP_VERSION, ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=139";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=248";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=179";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=223";
-import { renderAccounting } from "./accounting.js?v=34";
-import { renderPurchases } from "./purchases.js?v=132";
-import { renderBusinessSuite } from "./business-suite.js?v=4";
-import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=9";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=224";
+import { renderAccounting } from "./accounting.js?v=35";
+import { renderPurchases } from "./purchases.js?v=133";
+import { renderBusinessSuite } from "./business-suite.js?v=5";
+import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=10";
 import { renderHistoryAndJournals } from "./history.js?v=2";
 import { renderPartnerMissions } from "./partner-missions.js?v=102";
-import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
+import { renderPartnerSandbox } from "./partner-sandbox.js?v=4";
 import { renderPartnerConnections } from "./partner-connections.js?v=61";
 import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=29";
 import { renderDataImportTool } from "./data-imports.js?v=5";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=69";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=70";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
 import { getSearchableClients, refreshClientDirectoryAfterSynchronization, renderClients } from "./clients.js?v=181";
 import { initializeDesktopWorkspace } from "./desktop-workspace.js?v=5";
@@ -20,7 +20,7 @@ import { synchronizeClients } from "./client-sync.js?v=132";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=124";
 import { getContextualSearchResults } from "./search.js?v=80";
 import { renderInterventionSearch } from "./intervention-search.js?v=5";
-import { initializeTerrainLocationSharing, renderOperationsMap } from "./operations-map.js?v=9";
+import { initializeTerrainLocationSharing, renderOperationsMap } from "./operations-map.js?v=10";
 import { state, resetSelection } from "./state.js?v=44";
 import {
     getSettings,
@@ -89,7 +89,9 @@ export function initializeNavigation(loadedDatabase) {
     window.addEventListener("depannhome:partner-email-changed", event => {
         const activeRoute = document.querySelector(".nav-button.active")?.dataset.nav;
         if (activeRoute !== ROUTES.companyEmail) return;
-        if (event.detail?.reason === "sync") window.setTimeout(renderCompanyEmail, 2200);
+        if (event.detail?.reason === "sync") window.setTimeout(() => {
+            if (document.querySelector(".nav-button.active")?.dataset.nav === ROUTES.companyEmail) renderCompanyEmail();
+        }, 2200);
         else renderCompanyEmail();
     });
     window.addEventListener("depannhome:edit-report-template", () => {
@@ -107,8 +109,8 @@ export function initializeNavigation(loadedDatabase) {
         if (document.querySelector('[data-suite-view="portal"]')) return;
         const currentView = getCurrentClientView();
         if (isClientFormView(currentView)) return;
+        if (currentView.selectedId) return;
         if (!currentView.selectedId && refreshClientDirectoryAfterSynchronization()) return;
-        renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, skipClientSynchronization: true, ...currentView });
     });
     window.addEventListener("depannhome:partner-client-provisioned", event => {
         const clientId = String(event.detail?.clientId || "");
@@ -881,8 +883,10 @@ async function openClients(clientId = "") {
         synchronizeClients({ forceFull: true }).catch(() => null)
     ]);
     if (!document.querySelector('.nav-button.active[data-nav="clients"]')) return;
+    if (document.querySelector('[data-suite-view="portal"]')) return;
     const currentView = getCurrentClientView();
     if (isClientFormView(currentView)) return;
+    if (currentView.selectedId) return;
     const activeSelectedId = currentView.selectedId || selectedId;
     if (!activeSelectedId && refreshClientDirectoryAfterSynchronization()) return;
     await renderClients({ database, navigateToRef, createBillingDocument: createBillingDocumentForClient, viewBillingDocument, createCalendarEvent: createCalendarEventForClient, skipClientSynchronization: true, ...(activeSelectedId ? { selectedId: activeSelectedId, focusMessages: true } : {}), ...(provisionedClientId ? { directoryClientId: provisionedClientId } : {}) });

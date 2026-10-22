@@ -1,7 +1,7 @@
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { ROUTES } from "./config.js?v=128";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
-import { renderPurchases } from "./purchases.js?v=132";
+import { renderPurchases } from "./purchases.js?v=133";
 
 const SECTIONS = [
     ["dashboard", "Tableau de bord"], ["salesJournal", "Journal des ventes"], ["settlements", "Règlements"], ["paymentReviews", "Règlements à contrôler"], ["credits", "Avoirs"], ["vat", "TVA"], ["purchases", "Achats"], ["export", "Export comptable"], ["fec", "Export FEC"], ["control", "Contrôle comptable"], ["b2cReporting", "E-reporting B2C"], ["electronic", "Facturation électronique & PDP"], ["settings", "Paramètres"]
@@ -25,10 +25,11 @@ export async function renderAccounting(section = activeSection) {
     setPage("Comptabilité · Facturation électronique & PDP", ROUTES.accounting, "detail");
     const container = getContainer();
     container.innerHTML = '<section class="client-panel accounting-shell"><p class="muted">Chargement du module comptable…</p></section>';
+    const shell = container.querySelector(".accounting-shell");
     const result = await api("/api/accounting");
+    if (!shell?.isConnected || container.firstElementChild !== shell) return;
     if (!result.ok) { container.innerHTML = `<section class="client-panel"><p class="auth-message error">${escapeHtml(result.message || "Impossible de charger le module comptable.")}</p></section>`; return; }
     accounting = result.data;
-    const shell = container.querySelector(".accounting-shell");
     shell.innerHTML = `<header class="accounting-heading"><div><p class="eyebrow">Données réelles de l’entreprise</p><h2>Comptabilité & facturation électronique</h2><p class="muted">Journal persistant isolé pour votre entreprise, contrôles et exports destinés à votre cabinet comptable.</p></div></header><aside class="accounting-pdp-notice">Depann’Home Pro prépare des écritures et fichiers à faire valider par un professionnel de la comptabilité. Ce module n’est pas un logiciel comptable certifié et ne garantit pas, à lui seul, la conformité d’un FEC.</aside>${isAccountingReadOnly() ? '<aside class="accounting-pdp-notice"><strong>Consultation comptable :</strong> ce poste peut consulter et exporter les données, sans modifier les pièces ni enregistrer d’opération.</aside>' : ""}<nav class="accounting-tabs" aria-label="Sections comptables">${sections.map(([id, label]) => `<button type="button" class="secondary-button${id === activeSection ? " active" : ""}" data-accounting-section="${id}">${label}</button>`).join("")}</nav><section id="accountingContent"></section>`;
     shell.querySelectorAll("[data-accounting-section]").forEach(button => button.addEventListener("click", () => renderAccounting(button.dataset.accountingSection)));
     const content = shell.querySelector("#accountingContent");
@@ -273,13 +274,13 @@ function consumeElectronicOAuthResult(value) {
     lastElectronicOAuthResultAt = deliveredAt;
     electronicOAuthFeedback = { success: payload.success === true, message: payload.message || (payload.success ? "Connexion SUPER PDP enregistrée." : "Connexion SUPER PDP impossible.") };
     localStorage.removeItem(ELECTRONIC_OAUTH_RESULT_KEY);
-    if (activeSection === "electronic") renderAccounting("electronic");
+    if (activeSection === "electronic" && document.querySelector(".accounting-shell")) renderAccounting("electronic");
 }
 
 function renderTransmissionTimeline(events = []) { return events.length ? `<details><summary>Voir la chronologie (${events.length})</summary><ol>${events.map(event => `<li><strong>${escapeHtml(transmissionEventLabel(event.eventType))}</strong> · ${escapeHtml(dateTime(event.createdAt))}<br><small>${escapeHtml(event.message || event.status || "Étape enregistrée")}</small></li>`).join("")}</ol></details>` : ""; }
 function renderInboundInvoice(item) { const actions = item.status === "received" ? `<button class="secondary-button" data-inbound-validate="${item.id}">Contrôler</button><button class="danger-button" data-inbound-reject="${item.id}">Refuser</button>` : item.status === "validated" ? `<button class="secondary-button" data-inbound-accept="${item.id}">Accepter</button><button class="danger-button" data-inbound-reject="${item.id}">Refuser</button>` : item.status === "accepted" ? `${item.purchaseId ? `<span class="auth-message success">Achat #${item.purchaseId}</span>` : `<button class="secondary-button" data-inbound-purchase="${item.id}">Créer l’achat</button>`}<button class="secondary-button" data-inbound-payment="${item.id}">Rapprocher le règlement</button>` : ""; return `<article><div><strong>${escapeHtml(item.invoiceNumber)} · ${escapeHtml(item.supplierName)}</strong><p>${escapeHtml(inboundStatusLabel(item.status))} · ${escapeHtml(validationStatusLabel(item.validationStatus))} · ${escapeHtml(paymentStatusLabel(item.paymentStatus))}</p><small>${escapeHtml(date(item.issueDate))} · ${money(item.amountTtc)} · ${escapeHtml(item.provider)}${item.rejectionReason ? ` · ${escapeHtml(item.rejectionReason)}` : ""}</small>${(item.validationMessages || []).length ? `<ul class="auth-message error">${item.validationMessages.map(message => `<li>${escapeHtml(message)}</li>`).join("")}</ul>` : ""}${renderTransmissionTimeline(item.events)}</div><div class="form-actions">${actions}</div></article>`; }
-async function inboundAction(button, action) { button.disabled = true; const id = button.dataset.inboundValidate || button.dataset.inboundPurchase; const answer = await api(`/api/accounting/e-invoicing/inbound/${id}/${action}`, { method: "POST", body: "{}" }); if (!answer.ok && answer.data?.messages?.length) alert(answer.data.messages.join("\n")); else if (!answer.ok) alert(answer.message || "Action impossible."); renderAccounting("electronic"); }
-async function inboundDecision(button, decision) { const id = button.dataset.inboundAccept || button.dataset.inboundReject; const reason = decision === "rejected" ? window.prompt("Motif du refus :", "") : ""; if (decision === "rejected" && !reason) return; const answer = await api(`/api/accounting/e-invoicing/inbound/${id}/decision`, { method: "POST", body: JSON.stringify({ decision, reason }) }); if (!answer.ok) alert(answer.message || "Décision impossible."); renderAccounting("electronic"); }
+async function inboundAction(button, action) { button.disabled = true; const id = button.dataset.inboundValidate || button.dataset.inboundPurchase; const answer = await api(`/api/accounting/e-invoicing/inbound/${id}/${action}`, { method: "POST", body: "{}" }); if (!answer.ok && answer.data?.messages?.length) alert(answer.data.messages.join("\n")); else if (!answer.ok) alert(answer.message || "Action impossible."); if (button.isConnected) renderAccounting("electronic"); }
+async function inboundDecision(button, decision) { const id = button.dataset.inboundAccept || button.dataset.inboundReject; const reason = decision === "rejected" ? window.prompt("Motif du refus :", "") : ""; if (decision === "rejected" && !reason) return; const answer = await api(`/api/accounting/e-invoicing/inbound/${id}/decision`, { method: "POST", body: JSON.stringify({ decision, reason }) }); if (!answer.ok) alert(answer.message || "Décision impossible."); if (button.isConnected) renderAccounting("electronic"); }
 
 function renderSettings(node) {
     const settings = accounting.settings;

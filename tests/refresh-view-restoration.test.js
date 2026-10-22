@@ -22,7 +22,7 @@ test("les sous-vues métier alimentent l’historique restaurable", () => {
 });
 
 test("le portail et ses sélections ne sont pas remplacés par une synchronisation silencieuse", () => {
-    assert.match(navigation, /if \(document\.querySelector\('\[data-suite-view="portal"\]'\)\) return;/);
+    assert.equal((navigation.match(/if \(document\.querySelector\('\[data-suite-view="portal"\]'\)\) return;/g) || []).length, 2);
     assert.match(businessSuite, /client\.value = selectedClientId/);
     assert.match(businessSuite, /new CustomEvent\("depannhome:application-view-changed"\)/);
     assert.match(businessSuite, /cache:method==="GET"\?"no-store":undefined/);

@@ -8,7 +8,7 @@ import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
 import { openDocumentDeliveryChoice } from "./document-delivery.js?v=2";
 import { pageSizeOptions, paginateItems, renderBusinessPagination } from "./pagination.js?v=1";
 import { renderLivePdfPreview } from "./pdf-live-preview.js?v=2";
-import { renderBusinessSuite } from "./business-suite.js?v=4";
+import { renderBusinessSuite } from "./business-suite.js?v=5";
 import { markDesktopWorkspaceDraftSaved } from "./desktop-workspace.js?v=5";
 
 const CUSTOMER_TYPES = ["Particulier", "Professionnel", "Magasin", "Autre"];
@@ -55,6 +55,7 @@ export async function renderBilling(options = {}) {
         billingData = options.data;
     } else {
         const result = await apiRequest(billingFinancialApiUrl());
+        if (!overviewPanel.isConnected) return;
         if (!result.ok) {
             overviewPanel.innerHTML = `<p class="auth-message error">${escapeHtml(result.message || "Impossible de charger les devis et factures.")}</p>`;
             return;
@@ -197,11 +198,11 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=new-quote]")?.addEventListener("click", () => { if (!isAccountant()) openNewDocument("quote"); });
     panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => { if (!isAccountant()) openNewDocument("invoice"); });
     panel.querySelector("[data-billing-action=open-leak-reports]")?.addEventListener("click", async () => {
-        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=69");
+        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=70");
         renderLeakReportWizard();
     });
     panel.querySelector("[data-billing-action=new-leak-report]")?.addEventListener("click", async () => {
-        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=69");
+        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=70");
         openLeakReportCreation();
     });
     panel.querySelector("[data-billing-action=download-quote-template]")?.addEventListener("click", openQuoteTemplateDownload);
@@ -210,7 +211,7 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=preview-blank-quote]")?.addEventListener("click", openBlankQuotePreview);
     panel.querySelector("[data-billing-action=manage-line-templates]")?.addEventListener("click", () => renderBilling({ templates: true }));
     panel.querySelector("[data-billing-action=open-purchases]")?.addEventListener("click", async () => {
-        const { renderPurchases } = await import("./purchases.js?v=132");
+        const { renderPurchases } = await import("./purchases.js?v=133");
         renderPurchases();
     });
     panel.querySelector("[data-billing-action=open-profitability]")?.addEventListener("click", () => renderBusinessSuite({ tab: "profitability" }));
@@ -718,7 +719,7 @@ async function submitInvoiceSettlement(event, document) {
     const result = await apiRequest(`/api/billing/documents/${encodeURIComponent(document.id)}/settlements`, { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(form))) });
     if (!result.ok) { button.disabled = false; feedback.textContent = result.message || "Règlement impossible."; feedback.classList.add("error"); return; }
     if (result.data?.pending) alert(result.data.message || "Règlement déclaré et en attente de contrôle bancaire.");
-    await renderBilling({ documentId: document.id });
+    if (form.isConnected) await renderBilling({ documentId: document.id });
 }
 
 async function createInvoiceCorrection(document, kind) {

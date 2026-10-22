@@ -9,13 +9,15 @@ export async function renderPartnerSandbox() {
     setPage("Sandbox partenaires", ROUTES.partnerSandbox, "detail");
     const container = getContainer();
     container.innerHTML = '<section class="partner-sandbox-shell"><p class="muted">Chargement de l’environnement de recette…</p></section>';
+    const shell = container.querySelector(".partner-sandbox-shell");
     const result = await api("/api/partner-sandbox/workspace");
+    if (!shell?.isConnected || container.firstElementChild !== shell) return;
     if (result.ok) {
         sandbox = result.data.sandbox;
-        renderWorkspace(container.querySelector(".partner-sandbox-shell"));
+        renderWorkspace(shell);
         return;
     }
-    if (result.status === 404) return renderActivation(container.querySelector(".partner-sandbox-shell"));
+    if (result.status === 404) return renderActivation(shell);
     container.innerHTML = `<section class="client-panel"><p class="auth-message error">${escapeHtml(result.message || "Impossible de charger la Sandbox.")}</p></section>`;
 }
 

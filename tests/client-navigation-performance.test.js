@@ -23,10 +23,10 @@ test("la seconde lecture serveur est réservée aux modifications locales envoy�
     assert.match(synchronization, /if \(operations\.length\) \{\s*const refreshed = await request/);
 });
 
-test("une synchronisation reçue rafraîchit automatiquement la fiche client ouverte sur PC", () => {
+test("une synchronisation reçue ne reconstruit jamais la fiche client ouverte sur PC", () => {
     assert.match(navigation, /depannhome:clients-synchronized/);
     assert.match(navigation, /const currentView = getCurrentClientView\(\)/);
-    assert.match(navigation, /skipClientSynchronization: true/);
+    assert.match(navigation, /if \(currentView\.selectedId\) return/);
     assert.match(clients, /panel\.dataset\.clientDetailId = client\.id/);
     assert.match(clientSync, /new EventSource\(clientSessionUrl\("\/api\/clients\/events"\), \{ withCredentials: true \}\)/);
     assert.match(clientSync, /client-changed/);
@@ -39,7 +39,7 @@ test("une synchronisation en arrière-plan conserve l’écran Nouveau client", 
     assert.match(openClients, /if \(isClientFormView\(currentView\)\) return/);
     assert.match(navigation, /if \(editId\) return \{ editId, clientWorkspace: "create" \}/);
     assert.match(navigation, /return clientWorkspace \? \{ clientWorkspace \} : \{\}/);
-    assert.match(navigation, /if \(isClientFormView\(currentView\)\) return;\s*if \(!currentView\.selectedId && refreshClientDirectoryAfterSynchronization\(\)\) return;\s*renderClients\(/);
+    assert.match(navigation, /if \(isClientFormView\(currentView\)\) return;\s*if \(currentView\.selectedId\) return;\s*if \(!currentView\.selectedId && refreshClientDirectoryAfterSynchronization\(\)\) return;/);
     assert.match(navigation, /return Boolean\(view\?\.editId \|\| view\?\.clientWorkspace === "create"\)/);
 });
 
@@ -58,4 +58,13 @@ test("un nouveau client est synchronisé avant le chargement de son historique s
     const synchronize = form.indexOf("await synchronizeClients()");
     const detail = form.indexOf("renderClients({ selectedId: nextClient.id");
     assert.ok(synchronize >= 0 && detail > synchronize);
+});
+
+test("la fin tardive de l’ouverture Clients ne remplace ni le portail ni une fiche déjà affichée", () => {
+    const openClients = navigation.slice(navigation.indexOf("async function openClients"), navigation.indexOf("function openNotificationDestination"));
+    const synchronization = openClients.indexOf("await Promise.all");
+    const portalGuard = openClients.indexOf("data-suite-view=\"portal\"");
+    const selectedClientGuard = openClients.indexOf("if (currentView.selectedId) return");
+    const finalRender = openClients.lastIndexOf("await renderClients");
+    assert.ok(synchronization >= 0 && portalGuard > synchronization && selectedClientGuard > portalGuard && finalRender > selectedClientGuard);
 });

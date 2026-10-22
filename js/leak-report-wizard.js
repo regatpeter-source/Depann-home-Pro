@@ -70,15 +70,17 @@ export async function renderLeakReportWizard(reportId = 0, appointmentId = 0) {
     setPage("Rapports de recherche de fuite", ROUTES.technicalReports, "detail");
     const root = getContainer();
     root.innerHTML = '<section class="report-editor-shell"><p class="muted">Ouverture de l’éditeur de rapport…</p></section>';
+    const shell = root.querySelector(".report-editor-shell");
     const index = await api("/api/technical-reports");
-    if (!index.ok) return showFailure(root, index.message);
+    if (!shell?.isConnected || root.firstElementChild !== shell) return;
+    if (!index.ok) return showFailure(root, index.message, shell);
     reports = index.data.reports || [];
     library = index.data.library || [];
     materialCatalog = index.data.materials || [];
     if (reportId) await loadReport(reportId);
     else if (appointmentId) await openAppointmentReport(appointmentId);
+    if (!shell.isConnected || root.firstElementChild !== shell) return;
     bindCollaborationEvents();
-    const shell = root.querySelector(".report-editor-shell");
     if (!current) return renderDirectory(shell);
     renderEditor(shell);
     announceReportWorkspace(current);
@@ -936,6 +938,6 @@ function statusLabel(value) { return ({ draft: "Brouillon", submitted: "Rapport 
 function reportDeliveryStatusLabel(report) { if (report.status !== "validated") return statusLabel(report.status); return report.deliveredAt ? report.deliveryMethod === "hand_delivered" ? "Remis en main propre" : "Envoyé par e-mail" : "Validé · à remettre"; }
 function formatDate(value) { return value ? new Intl.DateTimeFormat("fr-FR").format(new Date(`${value}T12:00:00`)) : ""; }
 function formatDateTime(value) { return value ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : "date inconnue"; }
-function showFailure(root, message) { root.innerHTML = `<section class="client-panel"><p class="auth-message error">${escapeHtml(message || "Impossible de charger les rapports.")}</p></section>`; }
+function showFailure(root, message, shell = root.firstElementChild) { if (shell?.isConnected && root.firstElementChild === shell) root.innerHTML = `<section class="client-panel"><p class="auth-message error">${escapeHtml(message || "Impossible de charger les rapports.")}</p></section>`; }
 async function api(url, options = {}) { try { const response = await fetch(url, { credentials: "same-origin", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options }); const data = response.status === 204 ? null : await response.json().catch(() => null); return { ok: response.ok, data, message: data?.message }; } catch { return { ok: false, message: "Serveur indisponible." }; } }
 async function upload(url, body) { try { const response = await fetch(url, { method: "POST", credentials: "same-origin", body }); const data = await response.json().catch(() => null); return { ok: response.ok, data, message: data?.message }; } catch { return { ok: false, message: "Serveur indisponible." }; } }

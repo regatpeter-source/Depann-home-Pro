@@ -1,14 +1,14 @@
 import { ROUTES } from "./config.js?v=134";
-import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=223";
+import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=224";
 import { getSearchableClients } from "./clients.js?v=179";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=132";
 import { markDesktopWorkspaceDraftSaved } from "./desktop-workspace.js?v=5";
 import { renderClientMessages } from "./messages.js?v=107";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=69";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=70";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
-import { renderPlanningOperationsMap } from "./operations-map.js?v=9";
+import { renderPlanningOperationsMap } from "./operations-map.js?v=10";
 import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
 
 const COLOR_OPTIONS = [

@@ -7,12 +7,13 @@ export async function renderGroupWorkspace() {
     setPage("Groupe & entreprises", ROUTES.groups, "detail");
     const container = getContainer();
     container.innerHTML = '<section class="group-shell"><p class="muted">Chargement du groupe…</p></section>';
+    const shell = container.querySelector(".group-shell");
     const [context, dashboard, audit, seatStatus] = await Promise.all([api("/api/groups/context"), api("/api/groups/dashboard"), api("/api/groups/audit"), api("/api/groups/seat-status")]);
+    if (!shell?.isConnected || container.firstElementChild !== shell) return;
     if (!context.ok || !context.data?.enabled) {
         container.innerHTML = '<section class="client-panel"><p class="auth-message error">Le mode Groupe n’est pas disponible.</p></section>';
         return;
     }
-    const shell = container.querySelector(".group-shell");
     renderWorkspace(shell, context.data, dashboard.data?.dashboard, audit.data?.entries || [], seatStatus.data?.seats);
 }
 
@@ -94,7 +95,7 @@ function renderWorkspace(shell, context, dashboard = { total: {}, companies: [] 
             return;
         }
         notifyGroupCompaniesChanged();
-        renderGroupWorkspace();
+        if (shell.isConnected) renderGroupWorkspace();
     });
     shell.querySelectorAll("[data-edit-company]").forEach(button => button.addEventListener("click", () => editCompany(button)));
     shell.querySelectorAll("[data-toggle-company]").forEach(button => button.addEventListener("click", () => toggleCompany(button)));
@@ -180,7 +181,7 @@ function renderCompanyProfileDialog(company) {
         }
         close();
         notifyGroupCompaniesChanged();
-        renderGroupWorkspace();
+        if (document.querySelector(".group-shell")) renderGroupWorkspace();
     });
     modal.querySelector("[data-delete-company]")?.addEventListener("click", () => removeCompany(company, modal));
     document.body.appendChild(modal);
@@ -196,7 +197,7 @@ async function removeCompany(company, modal) {
     if (!result.ok) { button.disabled = false; return alert(result.message || "Suppression impossible."); }
     modal.remove();
     notifyGroupCompaniesChanged();
-    renderGroupWorkspace();
+    if (document.querySelector(".group-shell")) renderGroupWorkspace();
 }
 
 async function toggleCompany(button) {
@@ -206,7 +207,7 @@ async function toggleCompany(button) {
     const result = await api(`/api/groups/companies/${encodeURIComponent(button.dataset.toggleCompany)}`, { method: "PATCH", body: JSON.stringify({ isActive: !active }) });
     if (!result.ok) { button.disabled = false; return alert(result.message || "Mise à jour impossible."); }
     notifyGroupCompaniesChanged();
-    renderGroupWorkspace();
+    if (button.isConnected) renderGroupWorkspace();
 }
 
 function notifyGroupCompaniesChanged() {

@@ -4,7 +4,7 @@ import { renderClientMessages } from "./messages.js?v=107";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { pageSizeOptions, paginateItems, renderBusinessPagination } from "./pagination.js?v=1";
-import { renderBusinessSuite } from "./business-suite.js?v=4";
+import { renderBusinessSuite } from "./business-suite.js?v=5";
 import { markDesktopWorkspaceDraftSaved } from "./desktop-workspace.js?v=5";
 import {
     clearSearch,

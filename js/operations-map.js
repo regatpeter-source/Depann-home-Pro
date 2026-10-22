@@ -16,6 +16,7 @@ let mapRefreshTimer = null;
 let activeMap = null;
 let activeMarkers = [];
 const planningMaps = new WeakMap();
+const operationsMapRequests = new WeakMap();
 
 export function initializeTerrainLocationSharing(locationHost) {
     if (!canShareLocation() || sharingButton || !locationHost) return;
@@ -153,16 +154,20 @@ function renderPlanningMapPayload(container, state, payload) {
 }
 
 async function loadOperationsMap(panel, date, announce = false) {
+    const requestVersion = (operationsMapRequests.get(panel) || 0) + 1;
+    operationsMapRequests.set(panel, requestVersion);
     const feedback = panel.querySelector("[data-map-feedback]");
     if (announce) feedback.textContent = "Actualisation de la carte…";
     try {
         const response = await fetch(`/api/operations-map/day?date=${encodeURIComponent(date)}`, { credentials: "same-origin", cache: "no-store" });
         const payload = await response.json().catch(() => null);
         if (!response.ok) throw new Error(payload?.message || "Impossible de charger la carte terrain.");
+        if (!panel.isConnected || operationsMapRequests.get(panel) !== requestVersion) return;
         renderMapContents(panel, payload);
         feedback.textContent = announce ? "Carte actualisée." : "";
         feedback.classList.remove("error");
     } catch (error) {
+        if (!panel.isConnected || operationsMapRequests.get(panel) !== requestVersion) return;
         feedback.textContent = error.message;
         feedback.classList.add("error");
     }

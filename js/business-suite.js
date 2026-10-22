@@ -15,10 +15,15 @@ export async function renderBusinessSuite(options = {}) {
     setPage(pageTitle(activeTab), pageRoute(activeTab), "business-suite");
     const container = getContainer();
     container.innerHTML = `<section class="business-suite-shell" data-suite-view="${activeTab}" data-suite-selected-client="${escapeHtml(selectedClientId)}" data-suite-selected-event="${escapeHtml(selectedEventId)}"><p class="muted">Chargement des données métier…</p></section>`;
+    const loadingShell = container.firstElementChild;
     try {
-        context = await api("/api/business-suite/overview");
+        const nextContext = await api("/api/business-suite/overview");
+        if (!loadingShell?.isConnected || container.firstElementChild !== loadingShell) return;
+        context = nextContext;
         renderShell(container);
-    } catch (error) { renderFailure(container, error); }
+    } catch (error) {
+        if (loadingShell?.isConnected && container.firstElementChild === loadingShell) renderFailure(container, error);
+    }
 }
 
 function renderShell(container) {

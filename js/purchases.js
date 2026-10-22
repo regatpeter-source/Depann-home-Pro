@@ -28,6 +28,7 @@ export async function renderPurchases(options = {}) {
     [editorPanel, listPanel].forEach(panel => panel.hidden = true);
 
     const result = await apiRequest("/api/purchases");
+    if (!overviewPanel.isConnected) return;
     if (!result.ok) {
         overviewPanel.innerHTML = `<p class="auth-message error">${escapeHtml(result.message || "Impossible de charger les achats.")}</p>`;
         return;
@@ -127,14 +128,14 @@ function renderPurchaseEditor(panel) {
         if (!result.ok) { message.textContent = result.message || "Impossible d’enregistrer l’achat."; message.classList.add("error"); return; }
         markDesktopWorkspaceDraftSaved();
         activePurchase = null;
-        renderPurchases(presentation);
+        if (panel.isConnected) renderPurchases(presentation);
     });
     panel.querySelector("#deletePurchase")?.addEventListener("click", async () => {
         if (!confirm("Supprimer cet achat ?")) return;
         const result = await apiRequest(`/api/purchases/${encodeURIComponent(purchase.id)}`, { method: "DELETE" });
         if (!result.ok) { alert(result.message || "Suppression impossible."); return; }
         activePurchase = null;
-        renderPurchases(presentation);
+        if (panel.isConnected) renderPurchases(presentation);
     });
 }
 

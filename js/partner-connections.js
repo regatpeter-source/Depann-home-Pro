@@ -1,5 +1,5 @@
 import { escapeHtml } from "./utils.js?v=44";
-import { renderPartnerSandbox } from "./partner-sandbox.js?v=3";
+import { renderPartnerSandbox } from "./partner-sandbox.js?v=4";
 import { renderPartnerMissions } from "./partner-missions.js?v=102";
 import { openProfessionalDirectory } from "./professional-directory.js?v=1";
 
