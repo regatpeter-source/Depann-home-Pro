@@ -3018,6 +3018,27 @@ body[data-role="mobile_admin"].mobile-device .store-match{min-height:72px;paddin
     background:#f8fbff;
 }
 
+.dashboard-sticky-notes{display:grid;gap:14px;padding:18px;border:1px solid #e8c94d;border-radius:16px;background:linear-gradient(135deg,#fffdf2,#fff);}
+.dashboard-sticky-notes-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;}
+.dashboard-sticky-notes-heading h3{margin:3px 0;color:var(--primary);}
+.dashboard-sticky-notes-heading .muted{margin:5px 0 0;}
+.dashboard-sticky-notes-heading>span{padding:6px 10px;border-radius:999px;background:#fff4b8;color:#725600;font-size:12px;font-weight:900;white-space:nowrap;}
+.dashboard-sticky-note-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;max-height:430px;overflow:auto;padding:2px;}
+.dashboard-sticky-note{display:grid;align-content:start;gap:7px;min-width:0;padding:15px;border:1px solid transparent;border-radius:4px 4px 15px 4px;color:#3f3300;text-align:left;box-shadow:0 7px 14px rgba(62,48,0,.12);cursor:pointer;}
+.dashboard-sticky-note-yellow{border-color:#e6c84e;background:#fef3c7;}
+.dashboard-sticky-note-red{border-color:#ef9999;background:#fee2e2;color:#641b1b;}
+.dashboard-sticky-note:hover,.dashboard-sticky-note:focus-visible{outline:3px solid rgba(10,92,54,.25);outline-offset:2px;transform:translateY(-1px);}
+.dashboard-sticky-note-priority{justify-self:start;padding:4px 7px;border-radius:999px;background:rgba(255,255,255,.58);font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.04em;}
+.dashboard-sticky-note>strong,.dashboard-sticky-note>span:not(.dashboard-sticky-note-priority),.dashboard-sticky-note>small{overflow-wrap:anywhere;}
+.dashboard-sticky-note>span:not(.dashboard-sticky-note-priority){white-space:pre-wrap;line-height:1.4;}
+.dashboard-sticky-note>small{opacity:.75;}
+.dashboard-sticky-note-empty{margin:0;padding:14px;border:1px dashed #d7b83c;border-radius:11px;background:rgba(255,255,255,.62);color:var(--muted);}
+body.dark-theme .dashboard-sticky-notes{border-color:#8b7420;background:linear-gradient(135deg,#342f19,var(--surface));}
+body.dark-theme .dashboard-sticky-notes-heading>span{background:#554916;color:#fde68a;}
+body.dark-theme .dashboard-sticky-note-yellow{border-color:#a68b24;background:#4b4014;color:#fef3c7;}
+body.dark-theme .dashboard-sticky-note-red{border-color:#b45353;background:#4b2020;color:#fee2e2;}
+body.dark-theme .dashboard-sticky-note-empty{background:rgba(15,23,42,.38);}
+
 .dashboard-events{
     display:grid;
     gap:10px;

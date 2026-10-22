@@ -1208,6 +1208,7 @@ async function renderHome() {
         ${document.body.dataset.canSwitchGroupCompanies === "true" ? '<section class="dashboard-company-switcher" data-dashboard-company-switcher><p class="muted">Chargement des entreprises autorisées…</p></section>' : ""}
         ${mobileRevenueEnabled ? renderMobileRevenueCard() : ""}
         ${desktopDashboard ? renderDashboardMetricCards(calendarEnabled) : ""}
+        ${desktopDashboard ? renderDashboardStickyNotes() : ""}
         ${calendarEnabled ? `<div class="dashboard-grid">
             <section class="dashboard-card"><p class="eyebrow">Aujourd’hui</p><h3>${escapeHtml(formatDashboardDate(new Date()))}</h3><div class="dashboard-events" data-dashboard-events="today"><p class="muted">Chargement des rendez-vous…</p></div></section>
             <section class="dashboard-card"><p class="eyebrow">À venir</p><h3>Les 7 prochains jours</h3><div class="dashboard-events" data-dashboard-events="upcoming"><p class="muted">Chargement des rendez-vous…</p></div></section>
@@ -1220,7 +1221,10 @@ async function renderHome() {
     bindDashboardMetricActions(panel);
     void renderHomeGroupCompanySwitcher(panel);
     if (mobileRevenueEnabled) bindMobileRevenueCard(panel);
-    if (desktopDashboard) void loadDashboardOperationalMetrics(panel);
+    if (desktopDashboard) {
+        void loadDashboardOperationalMetrics(panel);
+        void loadDashboardStickyNotes(panel);
+    }
     if (!calendarEnabled) return;
     const result = await loadDashboardEvents();
     if (!panel.isConnected) return;
@@ -1239,6 +1243,46 @@ async function renderHome() {
     updateDashboardMetric(panel, "calendar", String(todayEvents.length), `${upcomingEvents.length} prévu${upcomingEvents.length > 1 ? "s" : ""} sur 7 jours`);
     renderDashboardEvents(panel.querySelector('[data-dashboard-events="today"]'), todayEvents, "Aucun rendez-vous aujourd’hui.");
     renderDashboardEvents(panel.querySelector('[data-dashboard-events="upcoming"]'), upcomingEvents, "Aucun rendez-vous prévu dans les 7 prochains jours.");
+}
+
+function renderDashboardStickyNotes() {
+    return `<section class="dashboard-sticky-notes" data-dashboard-sticky-notes>
+        <div class="dashboard-sticky-notes-heading"><div><p class="eyebrow">Tâches clients</p><h3>Post-it en attente</h3><p class="muted">Les urgences rouges apparaissent en premier. Ouvrez un post-it pour reprendre directement le dossier.</p></div><span data-dashboard-sticky-count>…</span></div>
+        <div class="dashboard-sticky-note-list" data-dashboard-sticky-list><p class="muted">Chargement des post-it…</p></div>
+    </section>`;
+}
+
+async function loadDashboardStickyNotes(panel) {
+    const section = panel.querySelector("[data-dashboard-sticky-notes]");
+    const list = section?.querySelector("[data-dashboard-sticky-list]");
+    const counter = section?.querySelector("[data-dashboard-sticky-count]");
+    if (!section || !list || !counter || !isDesktopDevice()) return;
+    try {
+        const data = await loadDashboardJson("/api/clients/sticky-notes");
+        if (!section.isConnected) return;
+        const notes = Array.isArray(data?.stickyNotes) ? data.stickyNotes : [];
+        counter.textContent = `${notes.length} tâche${notes.length > 1 ? "s" : ""}`;
+        if (!notes.length) {
+            list.innerHTML = '<p class="dashboard-sticky-note-empty">Aucun post-it en attente. Tout est à jour.</p>';
+            return;
+        }
+        list.innerHTML = notes.map(note => `<button type="button" class="dashboard-sticky-note dashboard-sticky-note-${note.color === "red" ? "red" : "yellow"}" data-dashboard-sticky-client="${escapeHtml(String(note.clientId || ""))}">
+            <span class="dashboard-sticky-note-priority">${note.color === "red" ? "Urgent" : "En cours"}</span>
+            <strong>${escapeHtml(note.clientName || "Client sans nom")}${note.clientStatus === "archived" ? " · Archivé" : ""}</strong>
+            <span>${escapeHtml(note.body || "")}</span>
+            <small>${escapeHtml(note.createdByName || "Utilisateur")} · ${escapeHtml(formatDashboardDateTime(note.createdAt))}</small>
+        </button>`).join("");
+        list.querySelectorAll("[data-dashboard-sticky-client]").forEach(button => button.addEventListener("click", () => openClients(button.dataset.dashboardStickyClient)));
+    } catch {
+        if (!section.isConnected) return;
+        counter.textContent = "Indisponible";
+        list.innerHTML = '<p class="auth-message error">Impossible de charger les post-it pour le moment.</p>';
+    }
+}
+
+function formatDashboardDateTime(value) {
+    const date = new Date(value || "");
+    return Number.isNaN(date.getTime()) ? "Date inconnue" : new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(date);
 }
 
 function renderMobileRevenueCard() {

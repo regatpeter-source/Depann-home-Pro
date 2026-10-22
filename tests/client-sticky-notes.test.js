@@ -7,6 +7,7 @@ const migration = read("database/migrations/0040_client_sticky_notes.sql");
 const schema = read("database/schema.sql");
 const server = read("server/clients.js");
 const client = read("js/clients.js");
+const navigation = read("js/navigation.js");
 const style = read("css/style.css");
 
 test("les post-it sont persistants, isolés par entreprise et rattachés au dossier", () => {
@@ -49,4 +50,19 @@ test("les cartes jaunes et rouges restent lisibles sur un écran PC étroit et e
     assert.match(style, /@media\(max-width:760px\)[\s\S]*\.client-sticky-note-list\{grid-template-columns:1fr/);
     assert.match(style, /dark-theme \.client-sticky-note-yellow/);
     assert.match(style, /dark-theme \.client-sticky-note-red/);
+});
+
+test("la synthèse PC du tableau de bord est isolée par entreprise et ouvre le dossier client", () => {
+    const globalRoute = server.indexOf('app.get("/api/clients/sticky-notes"');
+    const clientParameterMiddleware = server.indexOf('app.use("/api/clients/:clientId"');
+    assert.ok(globalRoute >= 0 && globalRoute < clientParameterMiddleware);
+    assert.match(server, /app\.get\("\/api\/clients\/sticky-notes", requireAuthentication, requireClientStickyNotePcAccess/);
+    assert.match(server, /JOIN depannhome_clients client ON client\.owner_id=note\.owner_id AND client\.client_id=note\.client_id/);
+    assert.match(server, /WHERE note\.owner_id=\$1[\s\S]*ORDER BY CASE note\.color WHEN 'red' THEN 0 ELSE 1 END/);
+    assert.match(navigation, /desktopDashboard \? renderDashboardStickyNotes\(\) : ""/);
+    assert.match(navigation, /if \(!section \|\| !list \|\| !counter \|\| !isDesktopDevice\(\)\) return/);
+    assert.match(navigation, /loadDashboardJson\("\/api\/clients\/sticky-notes"\)/);
+    assert.match(navigation, /data-dashboard-sticky-client[\s\S]*openClients\(button\.dataset\.dashboardStickyClient\)/);
+    assert.match(style, /\.dashboard-sticky-note-red\{[^}]*background:#fee2e2/);
+    assert.match(style, /dark-theme \.dashboard-sticky-note-red/);
 });

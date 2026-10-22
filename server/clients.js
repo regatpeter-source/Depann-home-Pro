@@ -262,6 +262,20 @@ export function registerClientRoutes(app, requireAuthentication) {
         }
     }));
 
+    app.get("/api/clients/sticky-notes", requireAuthentication, requireClientStickyNotePcAccess, asyncHandler(async (request, response) => {
+        const { rows } = await getPool().query(`
+            SELECT note.id, note.client_id AS "clientId", note.color, note.body,
+                note.created_by AS "createdBy", note.created_by_name AS "createdByName", note.created_at AS "createdAt",
+                COALESCE(NULLIF(BTRIM(client.client_data->>'name'),''),'Client sans nom') AS "clientName",
+                client.client_status AS "clientStatus"
+            FROM depannhome_client_sticky_notes note
+            JOIN depannhome_clients client ON client.owner_id=note.owner_id AND client.client_id=note.client_id
+            WHERE note.owner_id=$1
+            ORDER BY CASE note.color WHEN 'red' THEN 0 ELSE 1 END, note.created_at DESC, note.id DESC
+        `, [getAccountOwnerId(request)]);
+        response.json({ stickyNotes: rows });
+    }));
+
     app.use("/api/clients/:clientId", asyncHandler(requireAssignedMobileClientAccess));
     app.use("/api/clients/:clientId/sticky-notes", requireAuthentication, requireClientStickyNotePcAccess);
 

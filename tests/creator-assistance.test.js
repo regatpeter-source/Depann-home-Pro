@@ -241,13 +241,13 @@ test("creator console exposes an explicit assistance workflow and warning banner
 
 test("PWA versions are synchronized for creator assistance assets", () => {
     assert.match(navigation, /creator\.js\?v=179/);
-    assert.match(index, /css\/style\.css\?v=310/);
-    assert.match(index, /js\/app\.js\?v=511/);
-    assert.match(serviceWorker, /depann-home-pro-v637/);
-    assert.match(serviceWorker, /css\/style\.css\?v=310/);
-    assert.match(serviceWorker, /js\/app\.js\?v=511/);
+    assert.match(index, /css\/style\.css\?v=311/);
+    assert.match(index, /js\/app\.js\?v=512/);
+    assert.match(serviceWorker, /depann-home-pro-v638/);
+    assert.match(serviceWorker, /css\/style\.css\?v=311/);
+    assert.match(serviceWorker, /js\/app\.js\?v=512/);
     assert.match(serviceWorker, /js\/collaboration\.js\?v=14/);
-    assert.match(serviceWorker, /js\/navigation\.js\?v=533/);
+    assert.match(serviceWorker, /js\/navigation\.js\?v=534/);
     assert.match(serviceWorker, /js\/creator\.js\?v=179/);
     assert.match(serviceWorker, /js\/connectors\.js\?v=10/);
 });

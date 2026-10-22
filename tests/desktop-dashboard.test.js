@@ -18,6 +18,8 @@ test("le tableau de bord PC affiche des indicateurs réels selon les droits", ()
     assert.match(navigation, /canAccessRoute\(ROUTES\.billing\)/);
     assert.match(navigation, /Promise\.allSettled\(requests\)/);
     assert.match(navigation, /Facturation momentanément indisponible/);
+    assert.match(navigation, /Post-it en attente/);
+    assert.match(navigation, /Les urgences rouges apparaissent en premier/);
 });
 
 test("le tableau de bord reste utile sur PC sans module planning", () => {
