@@ -796,11 +796,13 @@ async function loadClientStickyNotes(section, client) {
         deleteToggle.setAttribute("aria-pressed", "false");
         deleteToggle.textContent = "Tâche réalisée · supprimer";
         list.innerHTML = notes.length ? notes.map(note => `
-            <article class="client-sticky-note client-sticky-note-${note.color === "red" ? "red" : "yellow"}">
-                <p>${escapeHtml(note.body)}</p>
-                <footer><small>${escapeHtml(note.createdByName || "Utilisateur")} · ${escapeHtml(formatActivityDate(note.createdAt))}</small></footer>
-                <button type="button" class="client-sticky-note-delete" data-delete-sticky-note="${escapeHtml(String(note.id))}" aria-label="Supprimer ce post-it terminé">Sélectionner ce post-it</button>
-            </article>
+            <div class="client-sticky-note-item">
+                <article class="client-sticky-note client-sticky-note-${note.color === "red" ? "red" : "yellow"}">
+                    <p>${escapeHtml(note.body)}</p>
+                    <button type="button" class="client-sticky-note-delete" data-delete-sticky-note="${escapeHtml(String(note.id))}" aria-label="Supprimer ce post-it terminé">Sélectionner ce post-it</button>
+                </article>
+                <small class="client-sticky-note-meta">Créé par ${escapeHtml(note.createdByName || "Utilisateur")} · ${escapeHtml(formatActivityDate(note.createdAt))}</small>
+            </div>
         `).join("") : '<p class="client-sticky-note-empty">Aucun post-it en attente dans ce dossier.</p>';
         list.querySelectorAll("[data-delete-sticky-note]").forEach(button => {
             button.addEventListener("click", async () => {

@@ -43,7 +43,8 @@ test("la fiche client crée des post-it jaunes ou rouges et ne les retire que ma
     assert.match(client, /data-sticky-note-toggle[\s\S]*data-sticky-note-delete-toggle[^>]*hidden>Tâche réalisée · supprimer/);
     assert.match(client, /data-sticky-note-delete-toggle aria-pressed="false" aria-controls="clientStickyNoteList"/);
     assert.match(client, /setDeleteMode\(enabled\)[\s\S]*Sélectionnez le post-it correspondant à la tâche réalisée/);
-    assert.match(client, /<footer><small>[\s\S]*<\/small><\/footer>\s*<button[^>]*data-delete-sticky-note/);
+    assert.doesNotMatch(client, /<footer><small>[\s\S]*createdByName/);
+    assert.match(client, /<article class="client-sticky-note[\s\S]*data-delete-sticky-note[\s\S]*<small class="client-sticky-note-meta">Créé par \$\{escapeHtml\(note\.createdByName/);
     assert.match(client, /method: "DELETE"/);
     assert.match(client, /Cette tâche est-elle réalisée \? Le post-it sera supprimé définitivement\./);
     assert.match(client, /escapeHtml\(note\.body\)/);
@@ -62,6 +63,8 @@ test("les cartes jaunes et rouges restent lisibles sur un écran PC étroit et e
     assert.match(style, /\.client-sticky-note-list\{[^}]*grid-template-columns:repeat\(auto-fill,240px\)[^}]*justify-content:start/);
     assert.match(style, /\.client-sticky-note\{[^}]*width:240px[^}]*aspect-ratio:1/);
     assert.match(style, /\.client-sticky-note > p\{[^}]*overflow:auto/);
+    assert.match(style, /\.client-sticky-note-meta\{[^}]*color:var\(--muted\)[^}]*font-size:11px/);
+    assert.match(style, /\.client-sticky-note-feedback:empty\{display:none/);
     assert.match(style, /@media\(max-width:760px\)[\s\S]*\.client-sticky-note-list\{grid-template-columns:minmax\(0,240px\)/);
     assert.match(style, /dark-theme \.client-sticky-note-yellow/);
     assert.match(style, /dark-theme \.client-sticky-note-red/);
