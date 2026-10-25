@@ -40,7 +40,10 @@ test("la fiche client crée des post-it jaunes ou rouges et ne les retire que ma
     assert.match(client, /Texte du post-it[\s\S]*Couleur/);
     assert.match(client, /value="yellow" checked/);
     assert.match(client, /value="red"/);
-    assert.match(client, /Tâche réalisée · supprimer/);
+    assert.match(client, /data-sticky-note-toggle[\s\S]*data-sticky-note-delete-toggle[^>]*hidden>Tâche réalisée · supprimer/);
+    assert.match(client, /data-sticky-note-delete-toggle aria-pressed="false" aria-controls="clientStickyNoteList"/);
+    assert.match(client, /setDeleteMode\(enabled\)[\s\S]*Sélectionnez le post-it correspondant à la tâche réalisée/);
+    assert.match(client, /<footer><small>[\s\S]*<\/small><\/footer>\s*<button[^>]*data-delete-sticky-note/);
     assert.match(client, /method: "DELETE"/);
     assert.match(client, /Cette tâche est-elle réalisée \? Le post-it sera supprimé définitivement\./);
     assert.match(client, /escapeHtml\(note\.body\)/);
@@ -63,6 +66,8 @@ test("les cartes jaunes et rouges restent lisibles sur un écran PC étroit et e
     assert.match(style, /dark-theme \.client-sticky-note-yellow/);
     assert.match(style, /dark-theme \.client-sticky-note-red/);
     assert.match(style, /\.client-sticky-note-composer\{[^}]*position:absolute[^}]*box-shadow/);
+    assert.match(style, /\.client-sticky-note-delete\{[^}]*position:absolute[^}]*display:none/);
+    assert.match(style, /data-sticky-note-delete-mode="true"[^}]*\.client-sticky-note-delete\{display:flex/);
 });
 
 test("la synthèse PC du tableau de bord est isolée par entreprise et ouvre le dossier client", () => {

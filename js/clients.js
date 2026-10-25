@@ -697,6 +697,7 @@ function renderClientStickyNotesSection(archived) {
                 <div class="client-sticky-note-heading-actions">
                     <span class="client-sticky-note-count" data-sticky-note-count>…</span>
                     ${archived ? "" : '<button type="button" class="secondary-button" data-sticky-note-toggle aria-expanded="false" aria-controls="clientStickyNoteComposer">+ Ajouter un post-it</button>'}
+                    <button type="button" class="secondary-button danger-button" data-sticky-note-delete-toggle aria-pressed="false" aria-controls="clientStickyNoteList" hidden>Tâche réalisée · supprimer</button>
                 </div>
             </div>
             <p class="muted">Ils restent affichés dans ce dossier jusqu’à leur suppression manuelle une fois la tâche réalisée.</p>
@@ -710,7 +711,7 @@ function renderClientStickyNotesSection(archived) {
                 </div>
             `}
             <p class="auth-message client-sticky-note-feedback" data-sticky-note-feedback aria-live="polite"></p>
-            <div class="client-sticky-note-list" data-sticky-note-list><p class="muted">Chargement des post-it…</p></div>
+            <div class="client-sticky-note-list" id="clientStickyNoteList" data-sticky-note-list><p class="muted">Chargement des post-it…</p></div>
         </section>`;
 }
 
@@ -718,17 +719,32 @@ function bindClientStickyNotes(section, client) {
     if (!section) return;
     const form = section.querySelector("[data-sticky-note-form]");
     const toggle = section.querySelector("[data-sticky-note-toggle]");
+    const deleteToggle = section.querySelector("[data-sticky-note-delete-toggle]");
     const composer = section.querySelector("[data-sticky-note-composer]");
+    const setDeleteMode = enabled => {
+        section.dataset.stickyNoteDeleteMode = String(enabled);
+        deleteToggle?.setAttribute("aria-pressed", String(enabled));
+        if (deleteToggle) deleteToggle.textContent = enabled ? "Annuler la suppression" : "Tâche réalisée · supprimer";
+    };
     const closeComposer = () => {
         if (!toggle || !composer) return;
         composer.hidden = true;
         toggle.setAttribute("aria-expanded", "false");
     };
     toggle?.addEventListener("click", () => {
+        setDeleteMode(false);
         const opening = composer.hidden;
         composer.hidden = !opening;
         toggle.setAttribute("aria-expanded", String(opening));
         if (opening) window.requestAnimationFrame(() => form.elements.body.focus());
+    });
+    deleteToggle?.addEventListener("click", () => {
+        const enabled = section.dataset.stickyNoteDeleteMode !== "true";
+        closeComposer();
+        setDeleteMode(enabled);
+        const feedback = section.querySelector("[data-sticky-note-feedback]");
+        feedback.textContent = enabled ? "Sélectionnez le post-it correspondant à la tâche réalisée." : "";
+        if (enabled) section.querySelector("[data-delete-sticky-note]")?.focus();
     });
     section.querySelector("[data-sticky-note-cancel]")?.addEventListener("click", closeComposer);
     composer?.addEventListener("keydown", event => {
@@ -769,15 +785,21 @@ async function loadClientStickyNotes(section, client) {
     const list = section.querySelector("[data-sticky-note-list]");
     const counter = section.querySelector("[data-sticky-note-count]");
     const feedback = section.querySelector("[data-sticky-note-feedback]");
+    const deleteToggle = section.querySelector("[data-sticky-note-delete-toggle]");
     list.innerHTML = '<p class="muted">Chargement des post-it…</p>';
     try {
         const payload = await clientStickyNoteRequest(client.id);
         const notes = Array.isArray(payload.stickyNotes) ? payload.stickyNotes : [];
         counter.textContent = `${notes.length} post-it${notes.length > 1 ? "s" : ""}`;
+        section.dataset.stickyNoteDeleteMode = "false";
+        deleteToggle.hidden = !notes.length;
+        deleteToggle.setAttribute("aria-pressed", "false");
+        deleteToggle.textContent = "Tâche réalisée · supprimer";
         list.innerHTML = notes.length ? notes.map(note => `
             <article class="client-sticky-note client-sticky-note-${note.color === "red" ? "red" : "yellow"}">
                 <p>${escapeHtml(note.body)}</p>
-                <footer><small>${escapeHtml(note.createdByName || "Utilisateur")} · ${escapeHtml(formatActivityDate(note.createdAt))}</small><button type="button" class="client-sticky-note-delete" data-delete-sticky-note="${escapeHtml(String(note.id))}">Tâche réalisée · supprimer</button></footer>
+                <footer><small>${escapeHtml(note.createdByName || "Utilisateur")} · ${escapeHtml(formatActivityDate(note.createdAt))}</small></footer>
+                <button type="button" class="client-sticky-note-delete" data-delete-sticky-note="${escapeHtml(String(note.id))}" aria-label="Supprimer ce post-it terminé">Sélectionner ce post-it</button>
             </article>
         `).join("") : '<p class="client-sticky-note-empty">Aucun post-it en attente dans ce dossier.</p>';
         list.querySelectorAll("[data-delete-sticky-note]").forEach(button => {

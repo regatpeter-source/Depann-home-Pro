@@ -2306,19 +2306,18 @@ body.dark-theme .support-activity-panel{border-color:#f59e0b;background:#1e293b;
 .client-sticky-note-yellow{border-color:#e6c84e;background:#fef3c7;color:#3f3300;}
 .client-sticky-note-red{border-color:#ef9999;background:#fee2e2;color:#641b1b;}
 .client-sticky-note > p{margin:0;overflow:auto;overflow-wrap:anywhere;white-space:pre-wrap;font-size:16px;font-weight:750;line-height:1.45;scrollbar-width:thin;}
-.client-sticky-note footer{display:flex;align-items:end;justify-content:space-between;gap:10px;}
+.client-sticky-note footer{display:flex;align-items:end;}
 .client-sticky-note small{font-size:11px;opacity:.78;}
-.client-sticky-note-delete{position:relative;z-index:1;padding:7px 9px;border:1px solid currentColor;border-radius:9px;background:rgba(255,255,255,.48);color:inherit;font:inherit;font-size:11px;font-weight:900;cursor:pointer;}
+.client-sticky-note-delete{position:absolute;z-index:2;inset:12px;display:none;align-items:center;justify-content:center;padding:14px;border:2px solid currentColor;border-radius:12px;background:rgba(255,255,255,.88);color:inherit;font:inherit;font-size:13px;font-weight:900;text-align:center;cursor:pointer;}
+.client-sticky-notes[data-sticky-note-delete-mode="true"] .client-sticky-note-delete{display:flex;}
 .client-sticky-note-delete:hover,.client-sticky-note-delete:focus-visible{background:rgba(255,255,255,.85);outline:2px solid currentColor;outline-offset:2px;}
 .client-sticky-note-empty,.client-sticky-note-archived{margin:0;padding:13px;border:1px dashed #d7b83c;border-radius:11px;background:rgba(255,255,255,.55);color:var(--muted);}
 
 @media(max-width:760px){
-    .client-sticky-note-heading-actions{align-items:flex-end;flex-direction:column;}
+    .client-sticky-note-heading-actions{align-items:stretch;justify-content:flex-start;}
     .client-sticky-note-composer{top:90px;right:14px;width:calc(100% - 28px);}
     .client-sticky-note-form fieldset{flex-wrap:wrap;}
     .client-sticky-note-list{grid-template-columns:minmax(0,240px);}
-    .client-sticky-note footer{align-items:stretch;flex-direction:column;}
-    .client-sticky-note-delete{width:100%;min-height:42px;}
 }
 
 .client-toolbar-actions{
