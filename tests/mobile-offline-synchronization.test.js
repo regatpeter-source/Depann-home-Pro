@@ -11,7 +11,7 @@ test("le poste mobile conserve les mutations dans IndexedDB et les rejoue automa
     assert.match(source, /sort\(\(a, b\) => a\.createdAt - b\.createdAt\)/);
     assert.match(source, /X-DepannHome-Offline-Operation/);
     assert.match(source, /operationHeaders\.set\("X-DepannHome-Offline-Operation", operationId\)/);
-    assert.match(source, /fetcher\(input, \{ \.\.\.init, headers: operationHeaders \}\)/);
+    assert.match(source, /fetcher\(target, \{ \.\.\.init, headers: operationHeaders/);
     assert.match(source, /createOperation\(requestUrl, method, \{ \.\.\.init, headers: operationHeaders \}, operationId\)/);
     assert.match(source, /body instanceof FormData/);
     assert.match(source, /operation\.metadata\.localMediaIds/);
@@ -32,7 +32,9 @@ test("la page web restaure le dernier contexte mobile et précharge ses ressourc
     const worker = read("service-worker.js");
     assert.match(auth, /OFFLINE_MOBILE_SESSION_KEY/);
     assert.match(auth, /session\.networkError && navigator\.onLine === false/);
-    assert.match(worker, /\.\/js\/offline-sync\.js\?v=3/);
+    assert.match(worker, /\.\/js\/offline-sync\.js\?v=4/);
+    assert.match(worker, /\.\/js\/offline-tools\.js\?v=1/);
+    assert.match(worker, /\.\/js\/offline-replay\.js\?v=1/);
     assert.match(worker, /\.\/data\/database\.json/);
     assert.match(worker, /depannhome-offline-sync/);
     assert.match(worker, /flushOfflineOperations\(\)/);

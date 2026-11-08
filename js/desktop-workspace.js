@@ -12,6 +12,7 @@ let initialized = false;
 let detached = false;
 let tabDrag = null;
 let suppressedTabClick = "";
+let draftRestoreTimers = [];
 
 export function initializeDesktopWorkspace(options = {}) {
     if (initialized || document.body.dataset.deviceType !== "desktop") return false;
@@ -38,6 +39,16 @@ export function markDesktopWorkspaceDraftSaved() {
     if (!activeKey || !drafts.has(activeKey)) return false;
     drafts.delete(activeKey);
     renderWorkspace();
+    return true;
+}
+
+export function restoreDesktopWorkspaceDraft() {
+    const draft = activeKey && drafts.get(activeKey);
+    if (!draft) return false;
+    draftRestoreTimers.forEach(timer => window.clearTimeout(timer));
+    draftRestoreTimers = [];
+    if (!draft.dirty) return false;
+    restoreDraft(activeKey);
     return true;
 }
 
@@ -241,7 +252,13 @@ function captureDraft(key, dirty = false) {
 function restoreDraftSoon(key) {
     const draft = drafts.get(key);
     if (!draft) return;
-    [0, 120, 500].forEach(delay => window.setTimeout(() => restoreDraft(key), delay));
+    [0, 120, 500].forEach(delay => {
+        const timer = window.setTimeout(() => {
+            draftRestoreTimers = draftRestoreTimers.filter(item => item !== timer);
+            restoreDraft(key);
+        }, delay);
+        draftRestoreTimers.push(timer);
+    });
 }
 
 function restoreDraft(key) {
@@ -252,8 +269,9 @@ function restoreDraft(key) {
     draft.values.forEach(saved => {
         let control = controls[saved.index];
         if (!control || saved.name && control.name !== saved.name || saved.id && control.id !== saved.id) {
-            control = controls.find(candidate => saved.id && candidate.id === saved.id)
-                || controls.find(candidate => saved.name && candidate.name === saved.name);
+            control = saved.id
+                ? controls.find(candidate => candidate.id === saved.id)
+                : controls.find(candidate => saved.name && candidate.name === saved.name);
         }
         if (!control) return;
         if (typeof saved.checked === "boolean" && "checked" in control) control.checked = saved.checked;

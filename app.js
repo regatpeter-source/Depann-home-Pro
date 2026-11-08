@@ -51,6 +51,7 @@ import { registerPublicOfferRoutes } from "./server/public-offers.js";
 import { registerPublicAnalyticsRoutes } from "./server/public-analytics.js";
 import { registerCustomerPortalRoutes } from "./server/customer-portal.js";
 import { registerBusinessSuiteRoutes } from "./server/business-suite.js";
+import { registerMaintenanceContractRoutes } from "./server/maintenance-contracts.js";
 import { registerAutomationRoutes, startAutomationScheduler } from "./server/automation.js";
 import { dataImportUploadErrorHandler, initializeDataImports, registerDataImportRoutes } from "./server/data-imports.js";
 import {
@@ -282,6 +283,7 @@ registerPublicOfferRoutes(app);
 registerPublicAnalyticsRoutes(app, requireCreator);
 registerCustomerPortalRoutes(app, requireAuthentication);
 registerBusinessSuiteRoutes(app, requireAuthentication);
+registerMaintenanceContractRoutes(app, requireAuthentication);
 registerAutomationRoutes(app, requireAuthentication);
 
 // Seul le logo est nécessaire avant connexion. Le catalogue et les notices sont servis
@@ -421,4 +423,3 @@ function requireTechnicalWorkspaceAccess(request, response, next) {
 function isPartnerEmailOAuthCallback(request) {
 	return request.method === "GET" && /^\/oauth\/(?:google|microsoft)\/callback$/.test(request.path);
 }
-

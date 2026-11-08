@@ -16,7 +16,7 @@ Cette feuille de route distingue les fonctions déjà opérationnelles des compl
 | Interventions | Planning, affectations, statuts, pause/reprise, pointage, carte et proximité terrain | `server/calendar.js`, `js/calendar.js`, `server/operations-map.js` |
 | Documents commerciaux | Devis, factures, avoirs, modèles, PDF, émission légale et archives immuables | `server/billing.js`, `server/document-templates.js` |
 | Comptabilité | Règlements, journaux, TVA, exports CSV/XLSX/PDF/FEC et contrôles | `server/accounting.js`, `server/accounting-ledger.js` |
-| Facturation électronique | UBL, SUPER PDP, transmission, événements et factures fournisseurs entrantes | `server/electronic-invoicing.js`, `server/einvoice-lifecycle.js` |
+| Facturation électronique | UBL, connexion SUPER PDP, transmission sortante et événements ; saisie manuelle des factures fournisseurs entrantes et préparation locale B2C sans transmission automatique | `server/electronic-invoicing.js`, `server/einvoice-lifecycle.js`, `docs/ELECTRONIC_INVOICING.md` |
 | Achats | Registre des dépenses, TVA, justificatifs et rapprochement de factures entrantes | `server/purchases.js`, `js/purchases.js` |
 | Rapports terrain | Rapports structurés, photos, verrou collaboratif, validation et archivage | `server/technical-reports.js`, `js/leak-report-wizard.js` |
 | Partenaires | Missions, dialogue, annuaire, connexions, API, callbacks et bac à sable | `server/partner-missions.js`, `server/partner-dialogue.js` |

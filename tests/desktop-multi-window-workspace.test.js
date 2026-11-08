@@ -61,7 +61,7 @@ test("un enregistrement réussi nettoie uniquement le brouillon actif", () => {
     assert.match(businessSuite, /events\/\$\{values\.eventId\}\/assets[^\n]+markDesktopWorkspaceDraftSaved\(\)/);
     assert.match(businessSuite, /purchases\/\$\{data\.get\("purchaseId"\)\}\/event[^\n]+markDesktopWorkspaceDraftSaved\(\)/);
     assert.match(businessSuite, /labor-costs\/\$\{encodeURIComponent\(data\.get\("role"\)\)\}[^\n]+markDesktopWorkspaceDraftSaved\(\)/);
-    assert.match(creator, /import \{ markDesktopWorkspaceDraftSaved \} from "\.\/desktop-workspace\.js\?v=5"/);
+    assert.match(creator, /import \{ markDesktopWorkspaceDraftSaved \} from "\.\/desktop-workspace\.js\?v=6"/);
     assert.match(creator, /response\.ok && !\["GET", "HEAD"\]\.includes\(method\)\) markDesktopWorkspaceDraftSaved\(\)/);
 });
 

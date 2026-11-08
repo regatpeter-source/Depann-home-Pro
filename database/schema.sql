@@ -2211,13 +2211,40 @@ CREATE INDEX IF NOT EXISTS depannhome_client_equipment_owner_client_idx ON depan
 CREATE TABLE IF NOT EXISTS depannhome_maintenance_contracts (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE, client_id VARCHAR(100) NOT NULL,
     site_id BIGINT REFERENCES depannhome_client_sites(id) ON DELETE SET NULL, equipment_id BIGINT REFERENCES depannhome_client_equipment(id) ON DELETE SET NULL,
-    reference VARCHAR(100) NOT NULL, title VARCHAR(160) NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK(status IN ('draft','active','suspended','expired','cancelled')),
+    reference VARCHAR(100) NOT NULL, title VARCHAR(160) NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','active','suspended','expired','cancelled')),
     starts_on DATE NOT NULL, ends_on DATE, frequency_months INTEGER NOT NULL DEFAULT 12 CHECK(frequency_months BETWEEN 1 AND 120), next_service_on DATE,
     sla_hours INTEGER NOT NULL DEFAULT 0 CHECK(sla_hours BETWEEN 0 AND 8760), annual_amount_ht NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK(annual_amount_ht>=0),
+    service_description VARCHAR(5000) NOT NULL DEFAULT '', billing_interval_months INTEGER NOT NULL DEFAULT 12 CHECK(billing_interval_months BETWEEN 1 AND 120),
+    billing_amount_ht NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK(billing_amount_ht>=0), billing_vat_rate NUMERIC(5,2) NOT NULL DEFAULT 20 CHECK(billing_vat_rate BETWEEN 0 AND 100),
+    next_invoice_on DATE,
     notes VARCHAR(2000) NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT depannhome_maintenance_contracts_reference_unique UNIQUE(owner_id,reference)
 );
 CREATE INDEX IF NOT EXISTS depannhome_maintenance_contracts_due_idx ON depannhome_maintenance_contracts(owner_id,status,next_service_on,ends_on);
+CREATE INDEX IF NOT EXISTS depannhome_maintenance_contracts_invoice_due_idx ON depannhome_maintenance_contracts(owner_id,status,next_invoice_on);
+CREATE TABLE IF NOT EXISTS depannhome_maintenance_contract_templates (
+    owner_id BIGINT PRIMARY KEY REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    introduction TEXT NOT NULL DEFAULT '', scope TEXT NOT NULL DEFAULT '', exclusions TEXT NOT NULL DEFAULT '',
+    payment_terms TEXT NOT NULL DEFAULT '', renewal_terms TEXT NOT NULL DEFAULT '', cancellation_terms TEXT NOT NULL DEFAULT '',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS depannhome_maintenance_contract_documents (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    contract_id BIGINT NOT NULL REFERENCES depannhome_maintenance_contracts(id) ON DELETE CASCADE,
+    document_kind VARCHAR(20) NOT NULL CHECK(document_kind IN ('generated','signed')), file_name VARCHAR(255) NOT NULL,
+    mime_type VARCHAR(100) NOT NULL CHECK(mime_type='application/pdf'), pdf_data BYTEA NOT NULL, sha256 CHAR(64) NOT NULL,
+    snapshot JSONB NOT NULL DEFAULT '{}'::jsonb, created_by BIGINT REFERENCES depannhome_users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS depannhome_maintenance_contract_documents_owner_idx ON depannhome_maintenance_contract_documents(owner_id,contract_id,created_at DESC,id DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS depannhome_maintenance_contract_signed_document_idx ON depannhome_maintenance_contract_documents(owner_id,contract_id) WHERE document_kind='signed';
+CREATE TABLE IF NOT EXISTS depannhome_contract_invoice_drafts (
+    id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    contract_id BIGINT NOT NULL REFERENCES depannhome_maintenance_contracts(id) ON DELETE CASCADE,
+    period_start DATE NOT NULL, billing_document_id BIGINT NOT NULL REFERENCES depannhome_billing_documents(id) ON DELETE RESTRICT,
+    amount_ht NUMERIC(12,2) NOT NULL CHECK(amount_ht>=0), created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(owner_id,contract_id,period_start), UNIQUE(owner_id,billing_document_id)
+);
 ALTER TABLE depannhome_calendar_events ADD COLUMN IF NOT EXISTS site_id BIGINT REFERENCES depannhome_client_sites(id) ON DELETE SET NULL,
     ADD COLUMN IF NOT EXISTS equipment_id BIGINT REFERENCES depannhome_client_equipment(id) ON DELETE SET NULL,
     ADD COLUMN IF NOT EXISTS contract_id BIGINT REFERENCES depannhome_maintenance_contracts(id) ON DELETE SET NULL;
@@ -2269,6 +2296,7 @@ CREATE TABLE IF NOT EXISTS depannhome_internal_reminders (
     CONSTRAINT depannhome_internal_reminders_dedupe_unique UNIQUE(owner_id,dedupe_key)
 );
 CREATE INDEX IF NOT EXISTS depannhome_internal_reminders_due_idx ON depannhome_internal_reminders(owner_id,status,due_at);
+CREATE INDEX IF NOT EXISTS depannhome_internal_reminders_target_idx ON depannhome_internal_reminders(owner_id,rule_id,reminder_type,entity_type,entity_id,due_at);
 CREATE TABLE IF NOT EXISTS depannhome_automation_runs (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE, source VARCHAR(20) NOT NULL DEFAULT 'manual',
     status VARCHAR(20) NOT NULL CHECK(status IN ('running','completed','failed')), created_count INTEGER NOT NULL DEFAULT 0,

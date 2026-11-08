@@ -1,10 +1,10 @@
 import { ROUTES } from "./config.js?v=105";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
-import { renderCreatorConnectors } from "./connectors.js?v=11";
+import { renderCreatorConnectors } from "./connectors.js?v=12";
 import { renderHealthDashboard } from "./health-dashboard.js?v=1";
 import { creatorHistoryPresentation } from "./creator-history.js?v=2";
-import { markDesktopWorkspaceDraftSaved } from "./desktop-workspace.js?v=5";
+import { markDesktopWorkspaceDraftSaved } from "./desktop-workspace.js?v=6";
 
 let accounts = [];
 let selectedAccountId = "";

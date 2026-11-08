@@ -56,16 +56,16 @@ test("Gammes and Library never appear in the PC software", () => {
 });
 
 test("desktop stylesheet cache versions remain synchronized", () => {
-    assert.match(index, /css\/style\.css\?v=315/);
-    assert.match(index, /js\/app\.js\?v=521/);
-    assert.match(serviceWorker, /css\/style\.css\?v=315/);
-    assert.match(serviceWorker, /js\/app\.js\?v=521/);
-    assert.match(serviceWorker, /js\/clients\.js\?v=183/);
+    assert.match(index, /css\/style\.css\?v=317/);
+    assert.match(index, /js\/app\.js\?v=526/);
+    assert.match(serviceWorker, /css\/style\.css\?v=317/);
+    assert.match(serviceWorker, /js\/app\.js\?v=526/);
+    assert.match(serviceWorker, /js\/clients\.js\?v=188/);
     assert.match(serviceWorker, /js\/client-sync\.js\?v=132/);
-    assert.match(serviceWorker, /js\/desktop-workspace\.js\?v=5/);
-    assert.match(serviceWorker, /js\/navigation\.js\?v=543/);
+    assert.match(serviceWorker, /js\/desktop-workspace\.js\?v=6/);
+    assert.match(serviceWorker, /js\/navigation\.js\?v=548/);
     assert.match(serviceWorker, /js\/library\.js\?v=124/);
-    assert.match(serviceWorker, /js\/creator\.js\?v=179/);
+    assert.match(serviceWorker, /js\/creator\.js\?v=180/);
     assert.match(serviceWorker, /js\/i18n\.js\?v=6/);
-    assert.match(serviceWorker, /depann-home-pro-v647/);
+    assert.match(serviceWorker, /depann-home-pro-v652/);
 });

@@ -91,10 +91,14 @@ La catégorie du client pilote le canal, pas l’existence de la facture :
 
 - une facture destinée à un professionnel peut être transmise à la plateforme connectée dans le parcours de facturation électronique B2B ;
 - une facture destinée à un particulier est émise, numérotée, archivée en PDF/UBL et comptabilisée normalement, mais Depann’Home Pro bloque son envoi comme facture B2B ;
-- les opérations B2C relèvent de l’e-reporting. Depann’Home Pro prépare localement un lot immuable agrégé par jour et taux de TVA, ainsi que les encaissements de prestations lorsque la TVA n’est pas acquittée sur les débits. Le lot et son export portent toujours le statut **préparé localement — non transmis** tant que l’adaptateur SUPER PDP ne fournit pas de contrat d’envoi documenté ;
+- les opérations B2C relèvent de l’e-reporting. Depann’Home Pro prépare localement un lot immuable agrégé par jour et taux de TVA, ainsi que les encaissements de prestations lorsque la TVA n’est pas acquittée sur les débits. Le lot et son export portent toujours le statut **préparé localement — non transmis** tant que l’adaptateur SUPER PDP ne fournit pas de contrat d’envoi documenté. Le CSV est un document de travail : son acceptation par SUPER PDP n’est pas établie ;
 - un règlement immédiat ne dispense jamais d’émettre ou de conserver la facture.
 
 Un Poste Admin, un Poste Admin Mobile ou un Poste administratif autorisé peut enregistrer le règlement d’une facture émise. Un technicien disposant du droit « Créer des devis et factures » peut créer, émettre et encaisser une facture uniquement depuis une intervention qui lui est attribuée. Les modes normalisés sont **Chèque**, **Espèces**, **Virement** et **Carte bancaire**.
+
+Le traitement des avoirs B2C dans l’e-reporting n’est pas encore implémenté. La préparation est refusée si un avoir B2C émis ou un règlement associé, visible dans l’instantané, concerne la période ; un ancien lot est également signalé et son téléchargement bloqué si un tel avoir apparaît ensuite. Consulter l’expert-comptable et SUPER PDP pour déterminer les corrections et modalités applicables. Les contrôles et lots locaux ne constituent pas une déclaration ni une garantie de conformité réglementaire.
+
+Chaque lot est calculé à partir d’un instantané cohérent des factures, règlements et paramètres, puis reste immuable. Recréer le lot si les factures, les règlements de la période ou le paramètre de TVA changent : ces changements ne sont pas automatiquement détectés pour les anciens lots. Seule la présence d’un avoir B2C est recontrôlée avant le téléchargement.
 
 Les paiements par espèces ou carte sont comptabilisés immédiatement. Un chèque ou un virement crée uniquement une déclaration en attente avec référence obligatoire. Seul l’administrateur connecté depuis un poste PC approuvé peut confirmer la preuve bancaire ou refuser la déclaration. La validation crée alors le règlement et son écriture comptable de manière transactionnelle ; une déclaration contrôlée devient immuable.
 

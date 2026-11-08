@@ -100,12 +100,20 @@ test("PostgreSQL : les migrations sont checksumées et idempotentes", { skip: !e
     await database.query("CREATE TABLE depannhome_billing_documents(id BIGINT PRIMARY KEY)");
     await database.query("CREATE TABLE depannhome_accounting_settlements(id BIGINT PRIMARY KEY)");
     await database.query("CREATE TABLE depannhome_clients(owner_id BIGINT NOT NULL,client_id VARCHAR(100) NOT NULL,PRIMARY KEY(owner_id,client_id))");
+    await database.query(`CREATE TABLE depannhome_calendar_events(
+        id BIGINT PRIMARY KEY,owner_id BIGINT,client_id VARCHAR(100) NOT NULL DEFAULT '',
+        event_type VARCHAR(20) NOT NULL DEFAULT 'appointment',event_status VARCHAR(20) NOT NULL DEFAULT 'planned',
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+    await database.query("CREATE TABLE depannhome_purchases(id BIGINT PRIMARY KEY,owner_id BIGINT,updated_at TIMESTAMPTZ)");
     const { migrationStatus, runMigrations } = await import("../server/database-migrations.js");
     const first = await runMigrations({ database, logger: { info() {} } });
     const second = await runMigrations({ database, logger: { info() {} } });
     assert.ok(first.applied.length >= 1);
     assert.equal(second.applied.length, 0);
     assert.equal((await migrationStatus(database)).every(item => item.status === "applied"), true);
+    const reminderIndex = await database.query("SELECT to_regclass('depannhome_internal_reminders_target_idx') AS name");
+    assert.equal(reminderIndex.rows[0].name, "depannhome_internal_reminders_target_idx");
     const migratedTables = await database.query(`
         SELECT table_name FROM information_schema.tables
         WHERE table_schema = current_schema()

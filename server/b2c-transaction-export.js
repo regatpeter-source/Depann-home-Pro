@@ -1,6 +1,29 @@
 import crypto from "node:crypto";
 import { getPool } from "./database.js";
 
+export const B2C_CREDIT_NOTE_MESSAGE = "Des avoirs B2C concernent cette période. Leur traitement e-reporting n’est pas encore pris en charge : consultez votre expert-comptable et SUPER PDP avant toute déclaration.";
+
+function creditNotesExist(owner, start, end) {
+    return `EXISTS (
+        SELECT 1 FROM depannhome_billing_documents credit
+        WHERE credit.owner_id=${owner} AND credit.customer_type='Particulier' AND credit.document_type='credit'
+          AND credit.issued_at IS NOT NULL AND credit.status NOT IN ('cancelled','rejected')
+          AND (credit.issue_date BETWEEN ${start} AND ${end} OR EXISTS (
+              SELECT 1 FROM depannhome_accounting_settlements settlement
+              WHERE settlement.owner_id=credit.owner_id AND settlement.document_id=credit.id
+                AND settlement.settlement_date BETWEEN ${start} AND ${end}
+          ))
+    )`;
+}
+
+function assertNoCreditNotes(hasCreditNotes) {
+    if (typeof hasCreditNotes !== "boolean") throw new Error("Impossible de vérifier les avoirs B2C de cette période.");
+    if (!hasCreditNotes) return;
+    const error = new Error(B2C_CREDIT_NOTE_MESSAGE);
+    error.status = 409;
+    throw error;
+}
+
 export function buildB2cReportPayload({ documents = [], settlements = [], vatOnDebits = false, periodStart, periodEnd, generatedAt = new Date().toISOString() }) {
     const groups = new Map();
     const documentById = new Map(documents.map(document => [String(document.id), document]));
@@ -33,7 +56,7 @@ export function buildB2cReportPayload({ documents = [], settlements = [], vatOnD
         schemaVersion: 1,
         status: "prepared_local",
         transmissionStatus: "not_transmitted",
-        notice: "Préparation locale à contrôler puis déposer auprès de SUPER PDP. Aucun envoi fiscal n’a été effectué.",
+        notice: "Préparation locale à contrôler avec votre conseil. Recréez le lot si les factures, les règlements de la période ou le paramètre de TVA changent. La compatibilité du CSV avec SUPER PDP n’est pas établie. Aucun envoi fiscal n’a été effectué.",
         periodStart,
         periodEnd,
         generatedAt,
@@ -44,17 +67,17 @@ export function buildB2cReportPayload({ documents = [], settlements = [], vatOnD
 }
 
 export async function prepareB2cReport({ ownerId, actorId, periodStart, periodEnd, database = getPool() }) {
-    const [profileResult, documentsResult, settlementsResult] = await Promise.all([
-        database.query("SELECT vat_on_debits AS \"vatOnDebits\" FROM depannhome_billing_profiles WHERE owner_id=$1", [ownerId]),
-        database.query(`SELECT document.id,TO_CHAR(document.issue_date,'YYYY-MM-DD') AS "issueDate",document.lines,document.financial_data AS "financialData",COALESCE(document.legal_data->>'operationCategory','services') AS "operationCategory" FROM depannhome_billing_documents document WHERE document.owner_id=$1 AND document.customer_type='Particulier' AND document.document_type='invoice' AND document.issued_at IS NOT NULL AND document.status NOT IN ('cancelled','rejected') AND (document.issue_date BETWEEN $2::date AND $3::date OR EXISTS(SELECT 1 FROM depannhome_accounting_settlements settlement WHERE settlement.owner_id=document.owner_id AND settlement.document_id=document.id AND settlement.settlement_date BETWEEN $2::date AND $3::date)) ORDER BY document.issue_date,document.id`, [ownerId, periodStart, periodEnd]),
-        database.query(`SELECT settlement.id,settlement.document_id AS "documentId",TO_CHAR(settlement.settlement_date,'YYYY-MM-DD') AS date,settlement.amount::float AS amount FROM depannhome_accounting_settlements settlement JOIN depannhome_billing_documents document ON document.id=settlement.document_id AND document.owner_id=settlement.owner_id WHERE settlement.owner_id=$1 AND document.customer_type='Particulier' AND settlement.settlement_date BETWEEN $2::date AND $3::date ORDER BY settlement.settlement_date,settlement.id`, [ownerId, periodStart, periodEnd])
-    ]);
-    const payload = buildB2cReportPayload({ documents: documentsResult.rows, settlements: settlementsResult.rows, vatOnDebits: Boolean(profileResult.rows[0]?.vatOnDebits), periodStart, periodEnd });
-    const canonicalPayload = JSON.stringify(payload);
-    const hash = crypto.createHash("sha256").update(canonicalPayload).digest("hex");
     const connection = await database.connect();
     try {
-        await connection.query("BEGIN");
+        await connection.query("BEGIN ISOLATION LEVEL REPEATABLE READ");
+        const profileResult = await connection.query("SELECT vat_on_debits AS \"vatOnDebits\" FROM depannhome_billing_profiles WHERE owner_id=$1", [ownerId]);
+        const documentsResult = await connection.query(`SELECT document.id,TO_CHAR(document.issue_date,'YYYY-MM-DD') AS "issueDate",document.lines,document.financial_data AS "financialData",COALESCE(document.legal_data->>'operationCategory','services') AS "operationCategory" FROM depannhome_billing_documents document WHERE document.owner_id=$1 AND document.customer_type='Particulier' AND document.document_type='invoice' AND document.issued_at IS NOT NULL AND document.status NOT IN ('cancelled','rejected') AND (document.issue_date BETWEEN $2::date AND $3::date OR EXISTS(SELECT 1 FROM depannhome_accounting_settlements settlement WHERE settlement.owner_id=document.owner_id AND settlement.document_id=document.id AND settlement.settlement_date BETWEEN $2::date AND $3::date)) ORDER BY document.issue_date,document.id`, [ownerId, periodStart, periodEnd]);
+        const settlementsResult = await connection.query(`SELECT settlement.id,settlement.document_id AS "documentId",TO_CHAR(settlement.settlement_date,'YYYY-MM-DD') AS date,settlement.amount::float AS amount FROM depannhome_accounting_settlements settlement JOIN depannhome_billing_documents document ON document.id=settlement.document_id AND document.owner_id=settlement.owner_id WHERE settlement.owner_id=$1 AND document.customer_type='Particulier' AND settlement.settlement_date BETWEEN $2::date AND $3::date ORDER BY settlement.settlement_date,settlement.id`, [ownerId, periodStart, periodEnd]);
+        const creditsResult = await connection.query(`SELECT ${creditNotesExist("$1", "$2::date", "$3::date")} AS "hasCreditNotes"`, [ownerId, periodStart, periodEnd]);
+        assertNoCreditNotes(creditsResult.rows[0]?.hasCreditNotes);
+        const payload = buildB2cReportPayload({ documents: documentsResult.rows, settlements: settlementsResult.rows, vatOnDebits: Boolean(profileResult.rows[0]?.vatOnDebits), periodStart, periodEnd });
+        const canonicalPayload = JSON.stringify(payload);
+        const hash = crypto.createHash("sha256").update(canonicalPayload).digest("hex");
         const { rows } = await connection.query(`INSERT INTO depannhome_b2c_report_batches(owner_id,period_start,period_end,status,transaction_count,collection_count,payload,payload_sha256,created_by) VALUES($1,$2::date,$3::date,'prepared_local',$4,$5,$6::jsonb,$7,$8) RETURNING id,created_at AS "createdAt"`, [ownerId, periodStart, periodEnd, payload.transactions.length, payload.collections.length, canonicalPayload, hash, actorId]);
         await connection.query(`INSERT INTO depannhome_b2c_report_events(owner_id,batch_id,actor_id,event_type,details) VALUES($1,$2,$3,'prepared_local',$4::jsonb)`, [ownerId, rows[0].id, actorId, JSON.stringify({ payloadSha256: hash, transmissionStatus: "not_transmitted" })]);
         await connection.query("COMMIT");
@@ -66,16 +89,17 @@ export async function prepareB2cReport({ ownerId, actorId, periodStart, periodEn
 }
 
 export async function loadB2cReports(ownerId, database = getPool()) {
-    const { rows } = await database.query(`SELECT id,TO_CHAR(period_start,'YYYY-MM-DD') AS "periodStart",TO_CHAR(period_end,'YYYY-MM-DD') AS "periodEnd",status,transaction_count AS "transactionCount",collection_count AS "collectionCount",payload_sha256 AS "payloadSha256",created_at AS "createdAt" FROM depannhome_b2c_report_batches WHERE owner_id=$1 ORDER BY created_at DESC LIMIT 100`, [ownerId]);
+    const { rows } = await database.query(`SELECT batch.id,TO_CHAR(batch.period_start,'YYYY-MM-DD') AS "periodStart",TO_CHAR(batch.period_end,'YYYY-MM-DD') AS "periodEnd",batch.status,batch.transaction_count AS "transactionCount",batch.collection_count AS "collectionCount",batch.payload_sha256 AS "payloadSha256",batch.created_at AS "createdAt",${creditNotesExist("batch.owner_id", "batch.period_start", "batch.period_end")} AS "hasCreditNotes" FROM depannhome_b2c_report_batches batch WHERE batch.owner_id=$1 ORDER BY batch.created_at DESC LIMIT 100`, [ownerId]);
     return rows.map(row => ({ ...row, transmissionStatus: "not_transmitted" }));
 }
 
 export async function loadB2cReport(ownerId, batchId, database = getPool()) {
-    const { rows } = await database.query(`SELECT id,TO_CHAR(period_start,'YYYY-MM-DD') AS "periodStart",TO_CHAR(period_end,'YYYY-MM-DD') AS "periodEnd",status,transaction_count AS "transactionCount",collection_count AS "collectionCount",payload,payload_sha256 AS "payloadSha256",created_at AS "createdAt" FROM depannhome_b2c_report_batches WHERE id=$1 AND owner_id=$2`, [batchId, ownerId]);
+    const { rows } = await database.query(`SELECT batch.id,TO_CHAR(batch.period_start,'YYYY-MM-DD') AS "periodStart",TO_CHAR(batch.period_end,'YYYY-MM-DD') AS "periodEnd",batch.status,batch.transaction_count AS "transactionCount",batch.collection_count AS "collectionCount",batch.payload,batch.payload_sha256 AS "payloadSha256",batch.created_at AS "createdAt",${creditNotesExist("batch.owner_id", "batch.period_start", "batch.period_end")} AS "hasCreditNotes" FROM depannhome_b2c_report_batches batch WHERE batch.id=$1 AND batch.owner_id=$2`, [batchId, ownerId]);
     return rows[0] ? { ...rows[0], transmissionStatus: "not_transmitted" } : null;
 }
 
 export function buildB2cReportCsv(report) {
+    assertNoCreditNotes(report.hasCreditNotes);
     const rows = [...(report.payload?.transactions || []), ...(report.payload?.collections || [])];
     const header = ["type", "date", "taux_tva", "base_ht", "tva", "total_ttc", "nombre_sources", "statut_transmission"];
     const lines = rows.map(row => [row.kind === "transaction" ? "transaction_b2c" : "encaissement_service", row.date, row.vatRate.toFixed(2), row.amountHt.toFixed(2), row.vatAmount.toFixed(2), row.amountTtc.toFixed(2), row.sourceCount, "non_transmis"].join(";"));

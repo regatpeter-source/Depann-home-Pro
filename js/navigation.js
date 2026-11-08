@@ -1,25 +1,26 @@
 import { APP_VERSION, ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=139";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=248";
-import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=179";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=224";
-import { renderAccounting } from "./accounting.js?v=35";
-import { renderPurchases } from "./purchases.js?v=133";
-import { renderBusinessSuite } from "./business-suite.js?v=5";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=251";
+import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=180";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=228";
+import { renderAccounting } from "./accounting.js?v=39";
+import { renderPurchases } from "./purchases.js?v=136";
+import { renderBusinessSuite } from "./business-suite.js?v=9";
+import { canAccessReminderDashboard, mountReminderDashboard, reminderDashboardMarkup } from "./reminder-dashboard.js?v=2";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=10";
 import { renderHistoryAndJournals } from "./history.js?v=2";
-import { renderPartnerMissions } from "./partner-missions.js?v=102";
+import { renderPartnerMissions } from "./partner-missions.js?v=105";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=4";
-import { renderPartnerConnections } from "./partner-connections.js?v=61";
+import { renderPartnerConnections } from "./partner-connections.js?v=64";
 import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=29";
 import { renderDataImportTool } from "./data-imports.js?v=5";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=70";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=73";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
-import { getSearchableClients, refreshClientDirectoryAfterSynchronization, renderClients } from "./clients.js?v=183";
-import { initializeDesktopWorkspace } from "./desktop-workspace.js?v=5";
+import { getSearchableClients, refreshClientDirectoryAfterSynchronization, renderClients } from "./clients.js?v=188";
+import { initializeDesktopWorkspace } from "./desktop-workspace.js?v=6";
 import { synchronizeClients } from "./client-sync.js?v=132";
 import { configureLibrary, openLibrarySection, renderLibrary, searchPersonalLibrary } from "./library.js?v=124";
-import { getContextualSearchResults } from "./search.js?v=80";
-import { renderInterventionSearch } from "./intervention-search.js?v=5";
+import { getContextualSearchResults } from "./search.js?v=83";
+import { renderInterventionSearch } from "./intervention-search.js?v=8";
 import { initializeTerrainLocationSharing, renderOperationsMap } from "./operations-map.js?v=10";
 import { state, resetSelection } from "./state.js?v=44";
 import {
@@ -693,6 +694,16 @@ function initializeMobileWorkspaceMenu() {
     menuButton.addEventListener("click", () => drawer.hidden ? open() : close());
     drawer.querySelectorAll("[data-mobile-menu-close]").forEach(button => button.addEventListener("click", close));
     drawer.addEventListener("click", event => {
+        if (event.target.closest("[data-mobile-reminders]")) {
+            close();
+            if (isMobileAdministrator() && canAccessReminderDashboard(document.body.dataset)) {
+                void renderHome();
+                const reminders = document.querySelector("[data-dashboard-reminders]");
+                reminders?.focus({ preventScroll: true });
+                reminders?.scrollIntoView({ block: "start" });
+            }
+            return;
+        }
         const action = event.target.closest("[data-mobile-quick-action]");
         if (!action) return;
         const source = document.getElementById(action.dataset.mobileQuickAction);
@@ -715,8 +726,10 @@ function renderMobileWorkspaceFolders(container, quickActions) {
     ];
     container.innerHTML = groups.map(([title, ids], index) => {
         const actions = ids.map(id => quickActions.querySelector(`#${id}`)).filter(Boolean);
-        if (!actions.length) return "";
-        return `<details class="mobile-workspace-folder" ${index === 0 ? "open" : ""}><summary>${escapeHtml(title)}<span>${actions.length}</span></summary><div>${actions.map(button => `<button type="button" data-mobile-quick-action="${escapeHtml(button.id)}">${button.innerHTML}</button>`).join("")}</div></details>`;
+        const reminders = title === "Interventions" && isMobileAdministrator() && canAccessReminderDashboard(document.body.dataset)
+            ? '<button type="button" data-mobile-reminders>Rappels internes</button>' : "";
+        if (!actions.length && !reminders) return "";
+        return `<details class="mobile-workspace-folder" ${index === 0 ? "open" : ""}><summary>${escapeHtml(title)}<span>${actions.length + (reminders ? 1 : 0)}</span></summary><div>${actions.map(button => `<button type="button" data-mobile-quick-action="${escapeHtml(button.id)}">${button.innerHTML}</button>`).join("")}${reminders}</div></details>`;
     }).join("");
 }
 
@@ -1260,6 +1273,7 @@ async function renderHome() {
     const calendarEnabled = canAccessRoute(ROUTES.calendar);
     const desktopDashboard = isDesktopDevice();
     const mobileRevenueEnabled = isMobileDeviceContext() && ["mobile_admin", "team_lead", "technician"].includes(document.body.dataset.role);
+    const remindersEnabled = canAccessReminderDashboard(document.body.dataset);
     if (!calendarEnabled && !desktopDashboard && !mobileRevenueEnabled) {
         document.body.dataset.pageMode = "basic-home";
         renderPlatformAnnouncement(container);
@@ -1271,6 +1285,7 @@ async function renderHome() {
         ${mobileRevenueEnabled ? renderMobileRevenueCard() : ""}
         ${desktopDashboard ? renderDashboardMetricCards(calendarEnabled) : ""}
         ${desktopDashboard ? renderDashboardStickyNotes() : ""}
+        ${remindersEnabled ? reminderDashboardMarkup() : ""}
         ${calendarEnabled ? `<div class="dashboard-grid">
             <section class="dashboard-card"><p class="eyebrow">Aujourd’hui</p><h3>${escapeHtml(formatDashboardDate(new Date()))}</h3><div class="dashboard-events" data-dashboard-events="today"><p class="muted">Chargement des rendez-vous…</p></div></section>
             <section class="dashboard-card"><p class="eyebrow">À venir</p><h3>Les 7 prochains jours</h3><div class="dashboard-events" data-dashboard-events="upcoming"><p class="muted">Chargement des rendez-vous…</p></div></section>
@@ -1283,6 +1298,10 @@ async function renderHome() {
     bindDashboardMetricActions(panel);
     void renderHomeGroupCompanySwitcher(panel);
     if (mobileRevenueEnabled) bindMobileRevenueCard(panel);
+    if (remindersEnabled) mountReminderDashboard(panel.querySelector("[data-dashboard-reminders]"), {
+        openResources: canAccessRoute(ROUTES.businessSuite) ? options => renderBusinessSuite(options) : null,
+        openPlanning: calendarEnabled ? date => renderCalendar({ date: new Date(`${date}T12:00:00`) }) : null
+    });
     if (desktopDashboard) {
         void loadDashboardOperationalMetrics(panel);
         void loadDashboardStickyNotes(panel);

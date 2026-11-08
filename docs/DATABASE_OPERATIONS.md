@@ -33,11 +33,13 @@ Le contrôle **Santé → Base de données → Sauvegarde** consulte exclusiveme
 
 ## Restauration
 
-Une restauration directe sur `DATABASE_URL` est refusée. Définissez `RESTORE_DATABASE_URL` vers une base cible vide et distincte, puis lancez :
+Renseignez `DATABASE_URL` avec la source et `RESTORE_DATABASE_URL` avec une base cible vide et distincte, puis lancez :
 
 `npm run db:restore -- chemin/depannhome-....dump --confirm-restore`
 
-La commande vérifie le manifeste et le SHA-256 avant `pg_restore --clean --if-exists --exit-on-error`.
+La commande vérifie le manifeste et le SHA-256, se connecte aux deux bases et refuse une cible dont le nom PostgreSQL réel est identique à celui de la source, même si les URL ou les serveurs diffèrent. Par prudence, deux bases de même nom sur des serveurs distincts sont également refusées. La cible est contrôlée pour détecter les schémas et objets utilisateurs ; toute erreur de contrôle bloque la restauration. Les URL ne doivent utiliser que le paramètre `sslmode` ; les certificats libpq éventuels sont indiqués via `PGSSLROOTCERT`, `PGSSLCERT` et `PGSSLKEY`.
+
+`pg_restore` utilise `--single-transaction --exit-on-error` sans `--clean` : une erreur annule la transaction au lieu de supprimer des objets préexistants. Utilisez malgré tout une base et un compte isolés, sans trafic applicatif concurrent, et vérifiez que le routage DNS ou du proxy ne change pas entre le contrôle et la restauration. Les contrôles de catalogue ne remplacent ni l’isolation de la cible ni la confiance dans l’origine de l’archive.
 
 Après restauration :
 
@@ -50,3 +52,5 @@ Après restauration :
 ## Test de reprise
 
 Effectuer au minimum chaque trimestre une restauration sur une base temporaire. Consigner date, sauvegarde, durée, checksum, résultat des contrôles et décision de destruction de la cible. Une sauvegarde non restaurée périodiquement ne constitue pas une preuve de reprise.
+
+Le test automatisé facultatif `tests/restore-roundtrip-postgresql.test.js` crée sa propre instance PostgreSQL temporaire sur l’interface locale, sauvegarde des données fictives, les restaure et vérifie aussi le refus d’une cible non vide ainsi que l’annulation d’une restauration en échec. Pour l’exécuter, définir `TEST_RESTORE_ROUND_TRIP=1` et `TEST_POSTGRES_BIN_DIRECTORY` avec le chemin absolu du répertoire contenant `initdb`, `pg_ctl`, `pg_dump` et `pg_restore`, puis lancer `node --test tests/restore-roundtrip-postgresql.test.js`. Ce test ne remplace pas un exercice de reprise avec une sauvegarde réelle de l’entreprise.

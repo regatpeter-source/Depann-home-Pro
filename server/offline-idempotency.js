@@ -3,16 +3,19 @@ import { getAccountOwnerId } from "./auth.js";
 
 const OPERATION_ID_PATTERN = /^[0-9a-f-]{36}$/i;
 
-export function offlineIdempotent(handler) {
+export function offlineIdempotent(handler, { databaseProvider = getPool } = {}) {
     return (request, response, next) => {
         const operationId = String(request.get("X-DepannHome-Offline-Operation") || "");
+        const scope = String(request.get("X-DepannHome-Offline-Scope") || "");
+        if (scope && (!request.user?.sub || scope !== `${getAccountOwnerId(request)}:mobile:${request.user.sub}`)) {
+            return response.status(409).json({ message: "Cette opération hors ligne appartient à un autre compte ou utilisateur. Reconnectez-vous avec son compte d’origine." });
+        }
         if (!OPERATION_ID_PATTERN.test(operationId) || !request.user?.sub) return Promise.resolve(handler(request, response, next)).catch(next);
-        return executeOnce(request, response, next, handler, operationId).catch(next);
+        return executeOnce(request, response, next, handler, operationId, databaseProvider()).catch(next);
     };
 }
 
-async function executeOnce(request, response, next, handler, operationId) {
-    const database = getPool();
+async function executeOnce(request, response, next, handler, operationId, database, canResetConflict = true) {
     const ownerId = getAccountOwnerId(request);
     const userId = request.user.sub;
     const claim = await database.query(`
@@ -29,6 +32,10 @@ async function executeOnce(request, response, next, handler, operationId) {
         `, [ownerId, userId, operationId]);
         const saved = rows[0];
         if (!saved?.completedAt) return response.status(425).json({ message: "Cette opération est déjà en cours de synchronisation." });
+        if (canResetConflict && saved.responseStatus === 409 && request.get("X-DepannHome-Offline-Scope") && request.get("X-DepannHome-Offline-Retry") === "true") {
+            await database.query("DELETE FROM depannhome_offline_operations WHERE owner_id=$1 AND user_id=$2 AND operation_id=$3 AND completed_at IS NOT NULL AND response_status=409", [ownerId, userId, operationId]);
+            return executeOnce(request, response, next, handler, operationId, database, false);
+        }
         response.set("X-DepannHome-Offline-Replayed", "true");
         if (saved.responseType) response.type(saved.responseType);
         return response.status(saved.responseStatus || 204).send(saved.responseBody || undefined);
@@ -40,6 +47,10 @@ async function executeOnce(request, response, next, handler, operationId) {
     const finalize = async body => {
         if (finalized) return;
         finalized = true;
+        if (response.statusCode === 409 && request.get("X-DepannHome-Offline-Scope")) {
+            await database.query("DELETE FROM depannhome_offline_operations WHERE owner_id=$1 AND user_id=$2 AND operation_id=$3 AND completed_at IS NULL", [ownerId, userId, operationId]);
+            return;
+        }
         const serialized = body == null ? "" : Buffer.isBuffer(body) ? body.toString("base64") : typeof body === "string" ? body : JSON.stringify(body);
         await database.query(`
             UPDATE depannhome_offline_operations

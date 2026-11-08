@@ -94,11 +94,34 @@ test("les fonctions métier sont rangées dans Ressources, Clients et Devis & ra
     assert.match(module, /tab === "portal" \? ROUTES\.clients : tab === "profitability" \? ROUTES\.billing/);
     assert.match(navigation, /clientWorkspace === "portal"/);
     assert.match(navigation, /billingWorkspace === "profitability"/);
-    assert.match(worker, /business-suite\.js\?v=5/);
+    assert.match(worker, /business-suite\.js\?v=9/);
     assert.match(app, /registerCustomerPortalRoutes/);
     assert.match(app, /registerBusinessSuiteRoutes/);
     assert.match(app, /registerAutomationRoutes/);
     assert.match(app, /startAutomationScheduler/);
+});
+
+test("les contrats couvrent les documents signés, le renouvellement manuel et les brouillons de factures", async () => {
+    const [migration, schema, server, client] = await Promise.all([
+        read("database/migrations/0042_maintenance_contract_lifecycle.sql"),
+        read("database/schema.sql"),
+        read("server/maintenance-contracts.js"),
+        read("js/business-suite.js")
+    ]);
+    for (const table of ["depannhome_maintenance_contract_templates", "depannhome_maintenance_contract_documents", "depannhome_contract_invoice_drafts"]) {
+        assert.match(migration, new RegExp(`CREATE TABLE IF NOT EXISTS ${table}`));
+        assert.match(schema, new RegExp(`CREATE TABLE IF NOT EXISTS ${table}`));
+    }
+    assert.match(migration, /UNIQUE\(owner_id,contract_id,period_start\)/);
+    assert.match(migration, /WHERE document_kind='signed'/);
+    assert.match(server, /FOR UPDATE/);
+    assert.match(server, /status: "draft"/);
+    assert.match(server, /activatesContract: false/);
+    assert.match(server, /hasBillingWorkspaceAccess/);
+    assert.match(client, /Générer le projet PDF/);
+    assert.match(client, /Archiver le PDF signé/);
+    assert.match(client, /Créer le brouillon de facture échu/);
+    assert.match(client, /Préparer le renouvellement manuel/);
 });
 
 test("l’onglet de travail actif est nettement mis en évidence", async () => {

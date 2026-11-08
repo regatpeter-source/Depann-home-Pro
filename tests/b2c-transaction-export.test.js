@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildB2cReportCsv, buildB2cReportPayload } from "../server/b2c-transaction-export.js";
+import { buildB2cReportCsv, buildB2cReportPayload, prepareB2cReport } from "../server/b2c-transaction-export.js";
 
 const invoice = (overrides = {}) => ({
     id: 1,
@@ -53,7 +53,42 @@ test("an older service invoice contributes only its in-period collection", () =>
 
 test("CSV explicitly states that the local report was not transmitted", () => {
     const payload = buildB2cReportPayload({ documents: [invoice()], settlements: [], periodStart: "2026-03-01", periodEnd: "2026-03-31" });
-    const csv = buildB2cReportCsv({ payload });
+    const csv = buildB2cReportCsv({ payload, hasCreditNotes: false });
     assert.match(csv, /statut_transmission/);
     assert.match(csv, /non_transmis/);
+    assert.match(payload.notice, /compatibilité du CSV.*n’est pas établie/i);
+    assert.match(payload.notice, /Recréez le lot si les factures, les règlements de la période ou le paramètre de TVA changent/);
+});
+
+test("une période avec un avoir B2C ne crée pas de lot incomplet", async () => {
+    const queries = [];
+    const database = {
+        async connect() { return {
+            async query(sql) { queries.push(sql); return { rows: sql.includes('AS "hasCreditNotes"') ? [{ hasCreditNotes: true }] : [] }; },
+            release() { queries.push("RELEASE"); }
+        }; }
+    };
+    await assert.rejects(prepareB2cReport({ ownerId: "1", actorId: "2", periodStart: "2026-03-01", periodEnd: "2026-03-31", database }), error => error.status === 409 && /avoirs B2C/.test(error.message));
+    assert.equal(queries.some(sql => sql.startsWith("INSERT")), false);
+    assert.ok(queries.includes("ROLLBACK"));
+    assert.ok(queries.includes("RELEASE"));
+});
+
+test("un ancien lot devenu incomplet à cause d’un avoir ne peut pas être exporté", () => {
+    assert.throws(() => buildB2cReportCsv({ hasCreditNotes: true, payload: { transactions: [], collections: [] } }), error => error.status === 409 && /avoirs B2C/.test(error.message));
+});
+
+test("l’impossibilité de vérifier les avoirs ne crée pas de lot", async () => {
+    const queries = [];
+    const database = {
+        async connect() { return {
+            async query(sql) { queries.push(sql); return { rows: [] }; },
+            release() { queries.push("RELEASE"); }
+        }; }
+    };
+    await assert.rejects(prepareB2cReport({ ownerId: "1", actorId: "2", periodStart: "2026-03-01", periodEnd: "2026-03-31", database }), /Impossible de vérifier les avoirs/);
+    assert.equal(queries.some(sql => sql.startsWith("INSERT")), false);
+    assert.ok(queries.includes("ROLLBACK"));
+    assert.ok(queries.includes("RELEASE"));
+    assert.throws(() => buildB2cReportCsv({ payload: { transactions: [], collections: [] } }), /Impossible de vérifier les avoirs/);
 });

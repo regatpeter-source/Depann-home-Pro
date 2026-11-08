@@ -2,13 +2,14 @@ import { initializeAuthentication, restoreApplicationShell, signOut } from "./au
 import { initializeClientSynchronization } from "./client-sync.js?v=132";
 import { initializeCollaboration } from "./collaboration.js?v=14";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=543";
+import { initializeNavigation, refreshApplication } from "./navigation.js?v=548";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=45";
 import { FONT_OPTIONS } from "./config.js?v=139";
-import { installClientSessionGuard, onAuthenticationRequired, onClientSessionReplaced } from "./client-session.js?v=11";
+import { installClientSessionGuard, onAuthenticationRequired, onClientSessionReplaced } from "./client-session.js?v=12";
 import { initializeInterfaceLanguage } from "./i18n.js?v=6";
 import { stopTerrainLocationSharing } from "./operations-map.js?v=10";
+import { initializeOfflineTools } from "./offline-tools.js?v=1";
 
 let applicationStarted = false;
 let sessionReplacementHandled = false;
@@ -107,6 +108,7 @@ async function startApplication() {
         }
         await initializeSandboxCapabilities();
         await initializeClientSynchronization();
+        initializeOfflineTools();
         initializeCollaboration();
         const database = await loadDatabase();
         initializeNavigation(database);

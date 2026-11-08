@@ -29,6 +29,10 @@ export function hasGroupCompanySwitchAccess(user) {
         && user.canSwitchGroupCompanies === true;
 }
 
+export function hasInternalBusinessWorkspaceAccess(user) {
+    return ["standard", "group"].includes(user?.organization?.interfaceType) && user?.isSupportControl !== true;
+}
+
 export function supportsConfigurablePcPermissions(role) {
     return CONFIGURABLE_PC_ROLES.has(role);
 }

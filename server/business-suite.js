@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { getPool } from "./database.js";
 import { getAccountOwnerId } from "./auth.js";
+import { hasInternalBusinessWorkspaceAccess } from "./workstation-permissions.js";
 import { strictDateOnly } from "./date-validation.js";
 
 const ADMIN_ROLES = new Set(["admin", "pc_standard", "commercial", "mobile_admin"]);
@@ -25,7 +26,26 @@ export function registerBusinessSuiteRoutes(app, requireAuthentication) {
         const [sites, equipment, contracts] = await Promise.all([
             getPool().query(`SELECT id,name,address,postal_code AS "postalCode",city,contact_name AS "contactName",contact_phone AS "contactPhone",access_notes AS "accessNotes" FROM depannhome_client_sites WHERE owner_id=$1 AND client_id=$2 ORDER BY name`, [ownerId, clientId]),
             getPool().query(`SELECT id,site_id AS "siteId",name,category,brand,model,serial_number AS "serialNumber",TO_CHAR(installed_on,'YYYY-MM-DD') AS "installedOn",TO_CHAR(warranty_ends_on,'YYYY-MM-DD') AS "warrantyEndsOn",status,notes FROM depannhome_client_equipment WHERE owner_id=$1 AND client_id=$2 ORDER BY name`, [ownerId, clientId]),
-            getPool().query(`SELECT id,site_id AS "siteId",equipment_id AS "equipmentId",reference,title,status,TO_CHAR(starts_on,'YYYY-MM-DD') AS "startsOn",TO_CHAR(ends_on,'YYYY-MM-DD') AS "endsOn",frequency_months AS "frequencyMonths",TO_CHAR(next_service_on,'YYYY-MM-DD') AS "nextServiceOn",sla_hours AS "slaHours",annual_amount_ht::float AS "annualAmountHt",notes FROM depannhome_maintenance_contracts WHERE owner_id=$1 AND client_id=$2 ORDER BY starts_on DESC,id DESC`, [ownerId, clientId])
+            getPool().query(`SELECT contract.id,contract.site_id AS "siteId",contract.equipment_id AS "equipmentId",contract.reference,contract.title,contract.status,
+                TO_CHAR(contract.starts_on,'YYYY-MM-DD') AS "startsOn",TO_CHAR(contract.ends_on,'YYYY-MM-DD') AS "endsOn",
+                contract.frequency_months AS "frequencyMonths",TO_CHAR(contract.next_service_on,'YYYY-MM-DD') AS "nextServiceOn",
+                contract.sla_hours AS "slaHours",contract.annual_amount_ht::float AS "annualAmountHt",contract.notes,
+                contract.service_description AS "serviceDescription",contract.billing_interval_months AS "billingIntervalMonths",
+                contract.billing_amount_ht::float AS "billingAmountHt",contract.billing_vat_rate::float AS "billingVatRate",
+                TO_CHAR(contract.next_invoice_on,'YYYY-MM-DD') AS "nextInvoiceOn",
+                COALESCE((SELECT json_agg(json_build_object('id',document.id,'kind',document.document_kind,
+                    'fileName',document.file_name,'sha256',document.sha256,'createdAt',document.created_at)
+                    ORDER BY document.created_at DESC,document.id DESC)
+                    FROM depannhome_maintenance_contract_documents document
+                    WHERE document.owner_id=contract.owner_id AND document.contract_id=contract.id),'[]'::json) AS documents,
+                COALESCE((SELECT json_agg(json_build_object('id',invoice.billing_document_id,
+                    'documentNumber',billing.document_number,'periodStart',TO_CHAR(invoice.period_start,'YYYY-MM-DD'),
+                    'amountHt',invoice.amount_ht::float) ORDER BY invoice.period_start DESC)
+                    FROM depannhome_contract_invoice_drafts invoice
+                    JOIN depannhome_billing_documents billing ON billing.id=invoice.billing_document_id AND billing.owner_id=invoice.owner_id
+                    WHERE invoice.owner_id=contract.owner_id AND invoice.contract_id=contract.id),'[]'::json) AS "invoiceDrafts"
+                FROM depannhome_maintenance_contracts contract
+                WHERE contract.owner_id=$1 AND contract.client_id=$2 ORDER BY contract.starts_on DESC,contract.id DESC`, [ownerId, clientId])
         ]);
         response.json({ sites: sites.rows, equipment: equipment.rows, contracts: contracts.rows });
     }));
@@ -52,7 +72,7 @@ export function registerBusinessSuiteRoutes(app, requireAuthentication) {
         response.status(201).json({ id: rows[0].id });
     }));
 
-    app.post("/api/business-suite/clients/:clientId/contracts", requireAuthentication, requireAdministration, asyncHandler(async (request, response) => {
+    app.post("/api/business-suite/clients/:clientId/contracts", requireAuthentication, requireAdministration, requireInternalBusinessWorkspace, asyncHandler(async (request, response) => {
         const clientId = await requireClient(request);
         const ownerId = getAccountOwnerId(request);
         const reference = clean(request.body?.reference, 100);
@@ -61,11 +81,39 @@ export function registerBusinessSuiteRoutes(app, requireAuthentication) {
         const siteId = optionalId(request.body?.siteId);
         const equipmentId = optionalId(request.body?.equipmentId);
         if (!clientId) return response.status(404).json({ message: "Client introuvable." });
-        if (!reference || !title || !startsOn || siteId && !await owns("depannhome_client_sites", siteId, ownerId, clientId) || equipmentId && !await owns("depannhome_client_equipment", equipmentId, ownerId, clientId)) return response.status(400).json({ message: "Les informations du contrat sont invalides." });
+        const endsOn = request.body?.endsOn ? strictDateOnly(request.body.endsOn) : "";
+        const nextServiceOn = request.body?.nextServiceOn ? strictDateOnly(request.body.nextServiceOn) : "";
+        const nextInvoiceOn = request.body?.nextInvoiceOn ? strictDateOnly(request.body.nextInvoiceOn) : "";
+        const status = request.body?.status || "draft";
+        const rawAnnualAmount = Number(request.body?.annualAmountHt || 0);
+        if (!reference || !title || !startsOn || request.body?.endsOn && !endsOn || request.body?.nextServiceOn && !nextServiceOn || request.body?.nextInvoiceOn && !nextInvoiceOn || endsOn && endsOn < startsOn || !["draft", "active", "suspended", "expired", "cancelled"].includes(status) || !Number.isFinite(rawAnnualAmount) || rawAnnualAmount < 0 || rawAnnualAmount > 100000000 || siteId && !await owns("depannhome_client_sites", siteId, ownerId, clientId) || equipmentId && !await owns("depannhome_client_equipment", equipmentId, ownerId, clientId)) return response.status(400).json({ message: "Les informations du contrat sont invalides." });
         const frequencyMonths = integer(request.body?.frequencyMonths, 1, 120, 12);
-        const { rows } = await getPool().query(`INSERT INTO depannhome_maintenance_contracts(owner_id,client_id,site_id,equipment_id,reference,title,status,starts_on,ends_on,frequency_months,next_service_on,sla_hours,annual_amount_ht,notes)
-            VALUES($1,$2,$3,$4,$5,$6,$7,$8::date,$9::date,$10,$11::date,$12,$13,$14) RETURNING id`, [ownerId, clientId, siteId, equipmentId, reference, title, ["draft", "active", "suspended", "expired", "cancelled"].includes(request.body?.status) ? request.body.status : "active", startsOn, dateOrNull(request.body?.endsOn), frequencyMonths, dateOrNull(request.body?.nextServiceOn), integer(request.body?.slaHours, 0, 8760, 0), money(request.body?.annualAmountHt), clean(request.body?.notes, 2000)]);
+        const billingIntervalMonths = integer(request.body?.billingIntervalMonths, 1, 120, 12);
+        const rawBillingAmount = Number(request.body?.billingAmountHt || 0);
+        if (!Number.isFinite(rawBillingAmount) || rawBillingAmount < 0 || rawBillingAmount > 100000000 || request.body?.billingIntervalMonths && billingIntervalMonths !== Number(request.body.billingIntervalMonths)) {
+            return response.status(400).json({ message: "Le montant ou la périodicité de facturation est invalide." });
+        }
+        const billingAmountHt = money(rawBillingAmount);
+        const billingVatRate = request.body?.billingVatRate === undefined || request.body?.billingVatRate === "" ? 20 : Number(request.body.billingVatRate);
+        if (!Number.isFinite(billingVatRate) || billingVatRate < 0 || billingVatRate > 100) return response.status(400).json({ message: "Le taux de TVA périodique est invalide." });
+        const { rows } = await getPool().query(`INSERT INTO depannhome_maintenance_contracts(owner_id,client_id,site_id,equipment_id,reference,title,status,starts_on,ends_on,frequency_months,next_service_on,sla_hours,annual_amount_ht,notes,service_description,billing_interval_months,billing_amount_ht,billing_vat_rate,next_invoice_on)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8::date,$9::date,$10,$11::date,$12,$13,$14,$15,$16,$17,$18,$19::date) RETURNING id`, [ownerId, clientId, siteId, equipmentId, reference, title, status, startsOn, endsOn || null, frequencyMonths, nextServiceOn || null, integer(request.body?.slaHours, 0, 8760, 0), money(rawAnnualAmount), clean(request.body?.notes, 2000), clean(request.body?.serviceDescription, 5000), billingIntervalMonths, billingAmountHt, billingVatRate, nextInvoiceOn || null]);
         response.status(201).json({ id: rows[0].id });
+    }));
+
+    app.patch("/api/business-suite/clients/:clientId/contracts/:contractId/schedule", requireAuthentication, requireAdministration, requireInternalBusinessWorkspace, asyncHandler(async (request, response) => {
+        const clientId = clean(request.params.clientId, 100);
+        const contractId = positiveId(request.params.contractId);
+        const status = request.body?.status;
+        const endsOn = request.body?.endsOn === "" || request.body?.endsOn === null ? null : strictDateOnly(request.body?.endsOn);
+        const nextServiceOn = request.body?.nextServiceOn === "" || request.body?.nextServiceOn === null ? null : strictDateOnly(request.body?.nextServiceOn);
+        if (!clientId || !contractId || !["draft", "active", "suspended", "expired", "cancelled"].includes(status) || endsOn === "" || nextServiceOn === "") {
+            return response.status(400).json({ message: "Statut ou échéances du contrat invalides." });
+        }
+        const result = await getPool().query(`UPDATE depannhome_maintenance_contracts SET status=$4,ends_on=$5::date,next_service_on=$6::date,updated_at=NOW()
+            WHERE owner_id=$1 AND client_id=$2 AND id=$3`, [getAccountOwnerId(request), clientId, contractId, status, endsOn, nextServiceOn]);
+        if (!result.rowCount) return response.status(404).json({ message: "Contrat introuvable." });
+        response.status(204).end();
     }));
 
     app.delete("/api/business-suite/:resource/:id", requireAuthentication, requireAdministration, asyncHandler(async (request, response) => {
@@ -73,6 +121,13 @@ export function registerBusinessSuiteRoutes(app, requireAuthentication) {
         const table = tables[request.params.resource];
         const id = positiveId(request.params.id);
         if (!table || !id) return response.status(400).json({ message: "Ressource invalide." });
+        if (request.params.resource === "contracts") {
+            if (!hasInternalBusinessWorkspaceAccess(request.user)) return response.status(403).json({ message: "Fonction indisponible pour cette organisation ou pendant la prise en main Support." });
+            const history = await getPool().query(`SELECT
+                EXISTS(SELECT 1 FROM depannhome_maintenance_contract_documents WHERE owner_id=$1 AND contract_id=$2)
+                OR EXISTS(SELECT 1 FROM depannhome_contract_invoice_drafts WHERE owner_id=$1 AND contract_id=$2) AS has_history`, [getAccountOwnerId(request), id]);
+            if (history.rows[0]?.has_history) return response.status(409).json({ message: "Ce contrat possède des documents ou échéances archivés. Modifiez son statut au lieu de le supprimer." });
+        }
         const result = await getPool().query(`DELETE FROM ${table} WHERE id=$1 AND owner_id=$2`, [id, getAccountOwnerId(request)]);
         if (!result.rowCount) return response.status(404).json({ message: "Ressource introuvable." });
         response.status(204).end();
@@ -105,13 +160,22 @@ export function registerBusinessSuiteRoutes(app, requireAuthentication) {
 
     app.get("/api/business-suite/inventory", requireAuthentication, requireReadAccess, asyncHandler(async (request, response) => {
         const ownerId = getAccountOwnerId(request);
-        const [locations, items, movements] = await Promise.all([
-            getPool().query(`SELECT id,name,location_type AS "locationType",vehicle_registration AS "vehicleRegistration",assigned_user_id AS "assignedUserId",is_active AS "isActive" FROM depannhome_inventory_locations WHERE owner_id=$1 ORDER BY name`, [ownerId]),
-            getPool().query(`SELECT item.id,item.sku,item.name,item.unit,item.default_unit_cost::float AS "defaultUnitCost",item.reorder_level::float AS "reorderLevel",item.is_active AS "isActive",COALESCE(SUM(movement.quantity),0)::float AS quantity
-                FROM depannhome_inventory_items item LEFT JOIN depannhome_inventory_movements movement ON movement.owner_id=item.owner_id AND movement.item_id=item.id WHERE item.owner_id=$1 GROUP BY item.id ORDER BY item.name`, [ownerId]),
-            getPool().query(`SELECT movement.id,movement.item_id AS "itemId",item.name AS "itemName",movement.location_id AS "locationId",location.name AS "locationName",movement.movement_type AS "movementType",movement.quantity::float,movement.unit_cost::float AS "unitCost",movement.event_id AS "eventId",movement.reason,movement.created_at AS "createdAt" FROM depannhome_inventory_movements movement JOIN depannhome_inventory_items item ON item.id=movement.item_id JOIN depannhome_inventory_locations location ON location.id=movement.location_id WHERE movement.owner_id=$1 ORDER BY movement.created_at DESC,movement.id DESC LIMIT 200`, [ownerId])
-        ]);
-        response.json({ locations: locations.rows, items: items.rows, movements: movements.rows });
+        const database = await getPool().connect();
+        try {
+            await database.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+            const locations = await database.query(`SELECT id,name,location_type AS "locationType",vehicle_registration AS "vehicleRegistration",assigned_user_id AS "assignedUserId",is_active AS "isActive" FROM depannhome_inventory_locations WHERE owner_id=$1 ORDER BY name`, [ownerId]);
+            const items = await database.query(`SELECT item.id,item.sku,item.name,item.unit,item.default_unit_cost::float AS "defaultUnitCost",item.reorder_level::float AS "reorderLevel",item.is_active AS "isActive",COALESCE(SUM(movement.quantity),0)::float AS quantity
+                FROM depannhome_inventory_items item LEFT JOIN depannhome_inventory_movements movement ON movement.owner_id=item.owner_id AND movement.item_id=item.id WHERE item.owner_id=$1 GROUP BY item.id ORDER BY item.name`, [ownerId]);
+            const movements = await database.query(`SELECT movement.id,movement.item_id AS "itemId",item.name AS "itemName",movement.location_id AS "locationId",location.name AS "locationName",movement.movement_type AS "movementType",movement.quantity::float,movement.unit_cost::float AS "unitCost",movement.event_id AS "eventId",movement.reason,movement.created_at AS "createdAt" FROM depannhome_inventory_movements movement JOIN depannhome_inventory_items item ON item.id=movement.item_id JOIN depannhome_inventory_locations location ON location.id=movement.location_id WHERE movement.owner_id=$1 ORDER BY movement.created_at DESC,movement.id DESC LIMIT 200`, [ownerId]);
+            const balances = await database.query(`SELECT movement.item_id AS "itemId",movement.location_id AS "locationId",location.name AS "locationName",location.location_type AS "locationType",location.is_active AS "locationIsActive",SUM(movement.quantity)::float AS quantity
+                FROM depannhome_inventory_movements movement
+                JOIN depannhome_inventory_items item ON item.id=movement.item_id AND item.owner_id=movement.owner_id
+                JOIN depannhome_inventory_locations location ON location.id=movement.location_id AND location.owner_id=movement.owner_id
+                WHERE movement.owner_id=$1 GROUP BY movement.item_id,movement.location_id,location.name,location.location_type,location.is_active
+                ORDER BY location.name,movement.item_id`, [ownerId]);
+            await database.query("COMMIT");
+            response.json({ locations: locations.rows, items: items.rows, movements: movements.rows, balances: balances.rows });
+        } catch (error) { await database.query("ROLLBACK"); throw error; } finally { database.release(); }
     }));
 
     app.post("/api/business-suite/inventory/locations", requireAuthentication, requireManager, asyncHandler(async (request, response) => {
@@ -127,6 +191,19 @@ export function registerBusinessSuiteRoutes(app, requireAuthentication) {
         if (!sku || !name) return response.status(400).json({ message: "La référence et le nom sont obligatoires." });
         const { rows } = await getPool().query(`INSERT INTO depannhome_inventory_items(owner_id,sku,name,unit,default_unit_cost,reorder_level) VALUES($1,$2,$3,$4,$5,$6) RETURNING id`, [getAccountOwnerId(request), sku, name, clean(request.body?.unit, 30) || "unité", money(request.body?.defaultUnitCost), quantity(request.body?.reorderLevel, true)]);
         response.status(201).json({ id: rows[0].id });
+    }));
+
+    app.patch("/api/business-suite/inventory/items/:itemId/threshold", requireAuthentication, requireManager, requireInternalBusinessWorkspace, asyncHandler(async (request, response) => {
+        const itemId = positiveId(request.params.itemId);
+        const value = request.body?.reorderLevel;
+        const amount = Number(value);
+        const validType = typeof value === "number" || (typeof value === "string" && value.trim() !== "");
+        if (!itemId || !validType || !Number.isFinite(amount) || amount < 0 || amount > 100000000 || Math.abs(amount * 1000 - Math.round(amount * 1000)) > 1e-7) {
+            return response.status(400).json({ message: "Le seuil doit être compris entre 0 et 100 000 000, avec trois décimales au maximum." });
+        }
+        const result = await getPool().query("UPDATE depannhome_inventory_items SET reorder_level=$3,updated_at=NOW() WHERE owner_id=$1 AND id=$2", [getAccountOwnerId(request), itemId, amount]);
+        if (!result.rowCount) return response.status(404).json({ message: "Article introuvable." });
+        response.status(204).end();
     }));
 
     app.post("/api/business-suite/inventory/movements", requireAuthentication, requireAdministration, asyncHandler(async (request, response) => {
@@ -197,7 +274,7 @@ async function createMovement(request, movement) {
             if (!event.rowCount) throw Object.assign(new Error("Intervention introuvable."), { status: 400 });
         }
         const balance = await currentBalance(database, ownerId, movement.itemId, movement.locationId);
-        const newBalance = balance + movement.signedQuantity;
+        const newBalance = Math.round((balance + movement.signedQuantity) * 1000) / 1000;
         const override = request.user?.role === "admin" && request.body?.allowNegative === true && movement.reason.length >= 5;
         if (newBalance < 0 && !override) throw Object.assign(new Error("Stock insuffisant. Un administrateur peut autoriser l’écart avec un motif."), { status: 409 });
         const result = await database.query(`INSERT INTO depannhome_inventory_movements(owner_id,item_id,location_id,movement_type,quantity,unit_cost,event_id,reason,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`, [ownerId, movement.itemId, movement.locationId, movement.type, movement.signedQuantity, movement.unitCost, movement.eventId, movement.reason, request.user.sub]);
@@ -229,4 +306,5 @@ export async function calculateProfitability(ownerId, eventId) {
 async function requireClient(request) { const clientId=clean(request.params.clientId,100); const { rowCount }=await getPool().query("SELECT 1 FROM depannhome_clients WHERE owner_id=$1 AND client_id=$2 AND client_status='active'",[getAccountOwnerId(request),clientId]); return rowCount ? clientId : ""; }
 async function owns(table,id,ownerId,clientId) { const { rowCount }=await getPool().query(`SELECT 1 FROM ${table} WHERE id=$1 AND owner_id=$2 AND client_id=$3`,[id,ownerId,clientId]); return Boolean(rowCount); }
 function positiveId(value){const number=Number(value);return Number.isSafeInteger(number)&&number>0?number:0;} function optionalId(value){return value===null||value===undefined||value===""?null:positiveId(value)||null;} function clean(value,max){return String(value||"").replace(/[\u0000-\u001f\u007f]/g," ").trim().slice(0,max);} function dateOrNull(value){return value?strictDateOnly(value):null;} function integer(value,min,max,fallback){const number=Number(value);return Number.isInteger(number)&&number>=min&&number<=max?number:fallback;} function money(value){const number=Number(value);return Number.isFinite(number)&&number>=0&&number<=100000000?round(number):0;} function quantity(value,allowZero=false){const number=Number(value);return Number.isFinite(number)&&(allowZero?number>=0:number>0)&&number<=100000000?Math.round(number*1000)/1000:0;} function round(value){return Math.round(Number(value||0)*100)/100;}
+function requireInternalBusinessWorkspace(request,response,next){return hasInternalBusinessWorkspaceAccess(request.user)?next():response.status(403).json({message:"Fonction indisponible pour cette organisation ou pendant la prise en main Support."});}
 function requireAdministration(request,response,next){return ADMIN_ROLES.has(request.user?.role)?next():response.status(403).json({message:"Fonction réservée aux postes administratifs."});} function requireManager(request,response,next){return MANAGER_ROLES.has(request.user?.role)?next():response.status(403).json({message:"Fonction réservée aux responsables."});} function requireReadAccess(request,response,next){return request.user?.role==="accountant"||ADMIN_ROLES.has(request.user?.role)?next():response.status(403).json({message:"Accès réservé aux postes administratifs."});} function asyncHandler(handler){return(request,response,next)=>Promise.resolve(handler(request,response,next)).catch(next);}

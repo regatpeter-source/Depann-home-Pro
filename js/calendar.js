@@ -1,10 +1,10 @@
 import { ROUTES } from "./config.js?v=134";
-import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=224";
-import { getSearchableClients } from "./clients.js?v=179";
+import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=228";
+import { getSearchableClients } from "./clients.js?v=188";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=132";
-import { markDesktopWorkspaceDraftSaved } from "./desktop-workspace.js?v=5";
+import { markDesktopWorkspaceDraftSaved } from "./desktop-workspace.js?v=6";
 import { renderClientMessages } from "./messages.js?v=107";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=70";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=73";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";

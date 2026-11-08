@@ -1,5 +1,5 @@
 import { ROUTES } from "./config.js?v=116";
-import { getSearchableClients } from "./clients.js?v=179";
+import { getSearchableClients } from "./clients.js?v=188";
 import { addClientActivityByName } from "./client-sync.js?v=132";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -8,8 +8,8 @@ import { clearSearch, createInfo, getContainer, setPage } from "./ui.js?v=44";
 import { openDocumentDeliveryChoice } from "./document-delivery.js?v=2";
 import { pageSizeOptions, paginateItems, renderBusinessPagination } from "./pagination.js?v=1";
 import { renderLivePdfPreview } from "./pdf-live-preview.js?v=2";
-import { renderBusinessSuite } from "./business-suite.js?v=5";
-import { markDesktopWorkspaceDraftSaved } from "./desktop-workspace.js?v=5";
+import { renderBusinessSuite } from "./business-suite.js?v=9";
+import { markDesktopWorkspaceDraftSaved } from "./desktop-workspace.js?v=6";
 
 const CUSTOMER_TYPES = ["Particulier", "Professionnel", "Magasin", "Autre"];
 const PAYMENT_METHODS = ["Chèque", "Espèces", "Virement", "Carte bancaire"];
@@ -29,6 +29,9 @@ let billingPreviewCleanup = () => {};
 const billingDocumentPagination = { page: 1, pageSize: 20 };
 const currentBillingDate = new Date();
 const billingFinancialPeriod = { view: "monthly", year: String(currentBillingDate.getFullYear()), month: String(currentBillingDate.getMonth() + 1).padStart(2, "0") };
+if (typeof window !== "undefined") window.addEventListener("depannhome:open-billing-document", event => {
+    if (event.detail?.documentId) viewBillingDocument(event.detail.documentId);
+});
 
 export async function renderBilling(options = {}) {
     billingPreviewCleanup();
@@ -198,11 +201,11 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=new-quote]")?.addEventListener("click", () => { if (!isAccountant()) openNewDocument("quote"); });
     panel.querySelector("[data-billing-action=new-invoice]").addEventListener("click", () => { if (!isAccountant()) openNewDocument("invoice"); });
     panel.querySelector("[data-billing-action=open-leak-reports]")?.addEventListener("click", async () => {
-        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=70");
+        const { renderLeakReportWizard } = await import("./leak-report-wizard.js?v=73");
         renderLeakReportWizard();
     });
     panel.querySelector("[data-billing-action=new-leak-report]")?.addEventListener("click", async () => {
-        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=70");
+        const { openLeakReportCreation } = await import("./leak-report-wizard.js?v=73");
         openLeakReportCreation();
     });
     panel.querySelector("[data-billing-action=download-quote-template]")?.addEventListener("click", openQuoteTemplateDownload);
@@ -211,7 +214,7 @@ function renderOverview(panel, profilePanel) {
     panel.querySelector("[data-billing-action=preview-blank-quote]")?.addEventListener("click", openBlankQuotePreview);
     panel.querySelector("[data-billing-action=manage-line-templates]")?.addEventListener("click", () => renderBilling({ templates: true }));
     panel.querySelector("[data-billing-action=open-purchases]")?.addEventListener("click", async () => {
-        const { renderPurchases } = await import("./purchases.js?v=133");
+        const { renderPurchases } = await import("./purchases.js?v=136");
         renderPurchases();
     });
     panel.querySelector("[data-billing-action=open-profitability]")?.addEventListener("click", () => renderBusinessSuite({ tab: "profitability" }));

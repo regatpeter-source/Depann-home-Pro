@@ -1,3 +1,5 @@
+import "./offline-replay.js?v=1";
+
 const DATABASE_NAME = "depannhome-mobile-offline";
 const DATABASE_VERSION = 2;
 const QUEUE_STORE = "operations";
@@ -5,6 +7,7 @@ const CACHE_STORE = "responses";
 const MAPPING_STORE = "mappings";
 const METADATA_STORE = "metadata";
 const RETRY_DELAY = 30_000;
+const replay = globalThis.DepannHomeOfflineReplay;
 
 let networkFetch = null;
 let replayHeadersProvider = null;
@@ -19,7 +22,10 @@ export function initializeOfflineSync(fetchImplementation, headersProvider = nul
     initialized = true;
     window.addEventListener("online", () => scheduleFlush(250));
     window.addEventListener("depannhome:offline-session-ready", () => { rememberActiveScope(); scheduleFlush(0); });
-    window.addEventListener("depannhome:offline-session-ended", () => deleteRecord(METADATA_STORE, "activeScope").catch(() => {}));
+    window.addEventListener("depannhome:offline-session-ended", () => deleteRecord(METADATA_STORE, "activeScope").catch(error => {
+        console.error("[offline] Fermeture du contexte impossible :", error.name || "ERROR");
+        dispatchQueueState("error", { message: "Impossible de fermer le contexte hors ligne sur cet appareil." });
+    }));
     window.addEventListener("focus", () => scheduleFlush(500));
     document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") scheduleFlush(500); });
     navigator.serviceWorker?.addEventListener("message", event => { if (event.data?.type === "depannhome:flush-offline-queue") scheduleFlush(0); });
@@ -35,11 +41,34 @@ export async function offlineAwareFetch(fetchImplementation, input, init = {}) {
     if (!isDedicatedMobileSession() || requestUrl.origin !== window.location.origin || !requestUrl.pathname.startsWith("/api/")) {
         return fetcher(input, init);
     }
+    if (!currentScope()) {
+        if (isQueueableMutation(method, requestUrl.pathname)) return jsonResponse({ message: "Contexte mobile indisponible. Reconnectez-vous avant d’enregistrer cette opération." }, 503);
+        return fetcher(input, init);
+    }
 
     if (method === "GET" && isCacheableGet(requestUrl.pathname)) {
+        if (await pendingOfflineOperationCount()) {
+            const cached = await cachedResponse(requestUrl);
+            if (cached) return cached;
+        }
+        const hasLocalId = /offline-(event|report|media)-/.test(requestUrl.pathname);
+        let target = input;
+        if (hasLocalId) {
+            const mappings = (await getAll(MAPPING_STORE)).filter(item => item.scope === currentScope());
+            const original = `${requestUrl.pathname}${requestUrl.search}`;
+            const mapped = replay.remapUrl(original, mappings);
+            if (mapped !== original) target = typeof input === "string" ? mapped : new Request(new URL(mapped, requestUrl.origin), input);
+        }
         try {
-            const response = await fetcher(input, init);
-            if (response.ok && isJsonResponse(response)) await cacheResponse(requestUrl, response.clone());
+            const response = await fetcher(target, init);
+            if (response.ok && isJsonResponse(response)) {
+                if (await pendingOfflineOperationCount()) {
+                    const cached = await cachedResponse(requestUrl);
+                    if (cached) return cached;
+                }
+                await cacheResponse(requestUrl, response.clone());
+            }
+            if (hasLocalId && target === input && response.status === 404) return await cachedResponse(requestUrl) || response;
             if (response.ok || response.status < 500) return response;
             return await cachedResponse(requestUrl) || response;
         } catch (error) {
@@ -53,17 +82,33 @@ export async function offlineAwareFetch(fetchImplementation, input, init = {}) {
     const operationId = crypto.randomUUID();
     const operationHeaders = new Headers(init.headers || (typeof input !== "string" ? input.headers : undefined));
     operationHeaders.set("X-DepannHome-Offline-Operation", operationId);
-    if (navigator.onLine !== false) {
-        try { return await fetcher(input, { ...init, headers: operationHeaders }); }
+    if (navigator.onLine !== false && await pendingOfflineOperationCount() === 0) {
+        let target = input;
+        let body = init.body;
+        if (/offline-(event|report|media)-/.test(`${requestUrl.pathname}${typeof body === "string" ? body : ""}`) || body instanceof FormData) {
+            const mappings = (await getAll(MAPPING_STORE)).filter(item => item.scope === currentScope());
+            const original = `${requestUrl.pathname}${requestUrl.search}`;
+            const mapped = replay.remapUrl(original, mappings);
+            if (mapped !== original) target = typeof input === "string" ? mapped : new Request(new URL(mapped, requestUrl.origin), input);
+            if (body != null) body = deserializeBody(replay.remapBody(await serializeBody(body), mappings));
+            if (body instanceof FormData) operationHeaders.delete("Content-Type");
+        }
+        try { return await fetcher(target, { ...init, headers: operationHeaders, ...(body === undefined ? {} : { body }) }); }
         catch { /* La requête sera conservée ci-dessous. */ }
     }
 
     const operation = await createOperation(requestUrl, method, { ...init, headers: operationHeaders }, operationId);
-    const stored = await enqueueOperation(operation);
-    if (!stored) return jsonResponse({ message: "Le stockage hors ligne est saturé. Libérez de l’espace avant de continuer." }, 507);
     const synthetic = await syntheticPayload(operation);
-    await applyOptimisticCache(operation, synthetic);
-    if (operation.metadata.localReportId && synthetic.report) await cacheLocalReport(operation, synthetic.report);
+    const stored = await enqueueOperation(operation);
+    if (!stored.ok) return jsonResponse({ message: stored.message }, 507);
+    try {
+        await applyOptimisticCache(operation, synthetic);
+        if (operation.metadata.localReportId && synthetic.report) await cacheLocalReport(operation, synthetic.report);
+    } catch (error) {
+        console.error("[offline] Mise à jour locale indisponible :", error.name || "ERROR");
+        synthetic.warning = "L’envoi est conservé, mais l’affichage local n’a pas pu être actualisé. Ne supprimez pas les données de l’application.";
+        window.dispatchEvent(new CustomEvent("depannhome:offline-cache-error", { detail: { message: synthetic.warning } }));
+    }
     registerBackgroundSync();
     dispatchQueueState("queued");
     return jsonResponse(synthetic, 202);
@@ -82,8 +127,33 @@ export async function pendingOfflineOperationCount() {
     return operations.filter(item => item.scope === scope).length;
 }
 
+export async function getOfflineQueueStatus() {
+    const scope = currentScope();
+    if (!scope) return { pending: 0, blocked: null };
+    const operations = (await getAll(QUEUE_STORE)).filter(item => item.scope === scope).sort((a, b) => a.createdAt - b.createdAt);
+    const blocked = operations.find(item => item.blocked);
+    return { pending: operations.length, blocked: blocked ? { message: blocked.lastError || "Une opération doit être contrôlée.", attempts: Number(blocked.attempts || 0) } : null };
+}
+
+export async function retryOfflineQueue() {
+    if (!navigator.onLine || !currentScope()) return { ok: false, offline: true };
+    if (flushPromise) await flushPromise;
+    const scope = currentScope();
+    const operations = (await getAll(QUEUE_STORE)).filter(item => item.scope === scope).sort((a, b) => a.createdAt - b.createdAt);
+    const blocked = operations.find(item => item.blocked);
+    if (blocked) {
+        const database = await openDatabase();
+        try { await replay.unblock(database, blocked.id); }
+        finally { database.close(); }
+    }
+    return flushOfflineQueue();
+}
+
 function scheduleFlush(delay) {
-    window.setTimeout(() => flushOfflineQueue().catch(() => {}), delay);
+    window.setTimeout(() => flushOfflineQueue().catch(error => {
+        console.error("[offline] Synchronisation indisponible :", error.name || "ERROR");
+        dispatchQueueState("error", { message: "La synchronisation hors ligne est indisponible. Les données restent sur cet appareil." });
+    }), delay);
 }
 
 async function flushOperations() {
@@ -92,6 +162,11 @@ async function flushOperations() {
     const operations = (await getAll(QUEUE_STORE)).filter(item => item.scope === scope).sort((a, b) => a.createdAt - b.createdAt);
     let sent = 0;
     for (const operation of operations) {
+        if (operation.blocked) {
+            const message = operation.lastError || "Une opération hors ligne doit être contrôlée.";
+            dispatchQueueState("conflict", { operation, message });
+            return { ok: false, conflict: true, sent, message };
+        }
         const prepared = await prepareReplay(operation);
         let response;
         try {
@@ -118,7 +193,14 @@ async function flushOperations() {
             dispatchQueueState("conflict", { operation, status: response.status, message: details?.message || "Une opération hors ligne doit être contrôlée." });
             return { ok: false, conflict: true, sent };
         }
-        await recordResponseMappings(operation, response.clone());
+        try {
+            await recordResponseMappings(operation, response.clone());
+        } catch (error) {
+            const message = error.message || "La réponse de synchronisation doit être contrôlée.";
+            await updateAttempt(operation, message, true);
+            dispatchQueueState("conflict", { operation, status: response.status, message });
+            return { ok: false, conflict: true, sent, message };
+        }
         await deleteRecord(QUEUE_STORE, operation.id);
         sent += 1;
         window.dispatchEvent(new CustomEvent("depannhome:offline-operation-synchronized", { detail: { operation } }));
@@ -148,49 +230,53 @@ async function createOperation(url, method, init, id = crypto.randomUUID()) {
     if (method === "POST" && /\/technical-reports\/[^/]+\/media$/.test(url.pathname) && body.type === "form-data") {
         operation.metadata.localMediaIds = body.entries.filter(entry => entry.kind === "blob" && entry.name === "files").map(() => `offline-media-${crypto.randomUUID()}`);
     }
-    if (method === "POST" && url.pathname === "/api/calendar/events") operation.metadata.localEventId = `offline-event-${crypto.randomUUID()}`;
+    if (method === "POST" && url.pathname === "/api/calendar/events") {
+        const payload = parseJsonBody(body);
+        const dates = Array.isArray(payload.dates) && payload.dates.length ? [...new Set(payload.dates)] : [payload.date];
+        operation.metadata.localEventId = `offline-event-${crypto.randomUUID()}`;
+        if (dates.length > 1) {
+            operation.metadata.localEventDates = dates;
+            operation.metadata.localEventIds = dates.map((_, index) => index ? `offline-event-${crypto.randomUUID()}` : operation.metadata.localEventId);
+        }
+    }
     if (method === "POST" && url.pathname === "/api/technical-reports") operation.metadata.localReportId = `offline-report-${crypto.randomUUID()}`;
     return operation;
 }
 
 async function enqueueOperation(operation) {
     try {
-        const operations = await getAll(QUEUE_STORE);
-        if (operation.method === "PUT" && /\/api\/technical-reports\/[^/]+$/.test(operation.url)) {
-            const previous = operations.filter(item => item.scope === operation.scope && item.method === operation.method && item.url === operation.url && !item.blocked).at(-1);
-            if (previous) operation.id = previous.id;
-        }
         await putRecord(QUEUE_STORE, operation);
-        return true;
-    } catch {
-        return false;
+        return { ok: true };
+    } catch (error) {
+        console.error("[offline] Enregistrement impossible :", error.name || "ERROR");
+        return { ok: false, message: error.name === "QuotaExceededError" ? "Le stockage hors ligne est saturé. Libérez de l’espace avant de continuer." : "Le stockage hors ligne est indisponible. Vérifiez les autorisations du navigateur avant de continuer." };
     }
 }
 
 async function prepareReplay(operation) {
-    let url = operation.url;
-    const mappings = await getAll(MAPPING_STORE);
-    mappings.filter(item => item.scope === operation.scope).forEach(item => { url = url.replaceAll(encodeURIComponent(item.localId), encodeURIComponent(item.remoteId)).replaceAll(item.localId, item.remoteId); });
+    const mappings = (await getAll(MAPPING_STORE)).filter(item => item.scope === operation.scope);
+    const url = replay.remapUrl(operation.url, mappings);
     const headers = new Headers(operation.headers || []);
     Object.entries(replayHeadersProvider?.() || {}).forEach(([name, value]) => headers.set(name, value));
     headers.set("X-DepannHome-Offline-Operation", operation.id);
-    const body = deserializeBody(operation.body);
+    headers.set("X-DepannHome-Offline-Scope", operation.scope);
+    if (operation.retryAfterConflict) headers.set("X-DepannHome-Offline-Retry", "true");
+    const body = deserializeBody(replay.remapBody(operation.body, mappings));
     if (operation.body?.type === "form-data") headers.delete("Content-Type");
     return { url, options: { method: operation.method, credentials: "same-origin", headers, ...(body === undefined ? {} : { body }) } };
 }
 
 async function recordResponseMappings(operation, response) {
+    if (!replay.hasExpectedMappings(operation)) return;
     const data = await response.json().catch(() => null);
-    const mappings = [];
-    const media = Array.isArray(data?.media) ? data.media : [];
-    (operation.metadata?.localMediaIds || []).forEach((localId, index) => { if (media[index]?.id) mappings.push([localId, String(media[index].id)]); });
-    if (operation.metadata?.localEventId && data?.id) mappings.push([operation.metadata.localEventId, String(data.id)]);
-    if (operation.metadata?.localReportId && data?.id) mappings.push([operation.metadata.localReportId, String(data.id)]);
+    const mappings = replay.responseMappings(operation, data);
     await Promise.all(mappings.map(([localId, remoteId]) => putRecord(MAPPING_STORE, { key: `${operation.scope}:${localId}`, scope: operation.scope, localId, remoteId })));
 }
 
 async function updateAttempt(operation, message, blocked = false) {
-    await putRecord(QUEUE_STORE, { ...operation, attempts: Number(operation.attempts || 0) + 1, lastAttemptAt: Date.now(), lastError: message, blocked });
+    const database = await openDatabase();
+    try { await replay.recordAttempt(database, operation.id, message, blocked); }
+    finally { database.close(); }
 }
 
 async function serializeBody(body) {
@@ -231,7 +317,10 @@ async function syntheticPayload(operation) {
         const report = await buildLocalReport(parseJsonBody(operation.body).appointmentId, operation.metadata.localReportId);
         return { ...queued, id: operation.metadata.localReportId, report };
     }
-    if (operation.url === "/api/calendar/events" && operation.method === "POST") return { ...queued, id: operation.metadata.localEventId, ids: [operation.metadata.localEventId], count: 1 };
+    if (operation.url === "/api/calendar/events" && operation.method === "POST") {
+        const ids = operation.metadata.localEventIds || [operation.metadata.localEventId];
+        return { ...queued, id: ids[0], ids, count: ids.length };
+    }
     if (operation.url === "/api/messages" && operation.method === "POST") return { ...queued, message: { id: `offline-message-${operation.id}`, body: json.body || "", clientId: json.clientId || "", senderId: document.body.dataset.userId || "", senderName: document.body.dataset.userName || "", createdAt: new Date().toISOString(), pending: true } };
     return queued;
 }
@@ -256,8 +345,12 @@ async function cacheResponse(url, response) {
 
 async function cachedResponse(url) {
     const record = await getRecord(CACHE_STORE, cacheKey(url));
-    if (record) return new Response(record.body, { status: record.status || 200, headers: record.headers });
-    const appointmentId = url.pathname.match(/^\/api\/technical-reports\/appointments\/(\d+)$/)?.[1];
+    if (record) {
+        const headers = new Headers(record.headers);
+        headers.set("X-DepannHome-Offline", "true");
+        return new Response(record.body, { status: record.status || 200, headers });
+    }
+    const appointmentId = url.pathname.match(/^\/api\/technical-reports\/appointments\/(\d+|offline-event-[0-9a-f-]{36})$/i)?.[1];
     if (!appointmentId) return null;
     const appointment = await findCachedAppointment(appointmentId);
     return appointment ? jsonResponse({ appointment, report: null }) : null;
@@ -267,7 +360,11 @@ async function cacheLocalReport(operation, report) {
     const url = new URL(`/api/technical-reports/${operation.metadata.localReportId}`, location.origin);
     await putRecord(CACHE_STORE, { key: cacheKey(url), scope: operation.scope, url: url.pathname, status: 200, headers: [["content-type", "application/json"]], body: JSON.stringify({ report, originals: [], corrections: [], lock: { lockedBy: document.body.dataset.userId || "", userName: document.body.dataset.userName || "Poste mobile" } }), updatedAt: Date.now() });
     const appointmentUrl = new URL(`/api/technical-reports/appointments/${encodeURIComponent(report.appointmentId)}`, location.origin);
-    const appointmentRecord = await getRecord(CACHE_STORE, cacheKey(appointmentUrl));
+    let appointmentRecord = await getRecord(CACHE_STORE, cacheKey(appointmentUrl));
+    if (!appointmentRecord) {
+        const appointment = await findCachedAppointment(report.appointmentId);
+        if (appointment) appointmentRecord = { key: cacheKey(appointmentUrl), scope: operation.scope, url: appointmentUrl.pathname, status: 200, headers: [["content-type", "application/json"]], body: JSON.stringify({ appointment }), updatedAt: Date.now() };
+    }
     if (appointmentRecord) { const data = JSON.parse(appointmentRecord.body); data.report = report; appointmentRecord.body = JSON.stringify(data); await putRecord(CACHE_STORE, appointmentRecord); }
     const directoryUrl = new URL("/api/technical-reports", location.origin);
     const directoryRecord = await getRecord(CACHE_STORE, cacheKey(directoryUrl));
@@ -310,7 +407,14 @@ function applyOptimisticMutation(data, cachedUrl, operation, synthetic) {
     const payload = parseJsonBody(operation.body);
     const calendarMatch = operation.url.match(/^\/api\/calendar\/events\/([^/]+)(?:\/(pause|resume|quitus|deductible))?/);
     if (cachedUrl.startsWith("/api/calendar/events?") && Array.isArray(data.events)) {
-        if (operation.url === "/api/calendar/events" && operation.method === "POST") { data.events.push({ ...payload, id: synthetic.id, createdBy: document.body.dataset.userId || "", createdDeviceType: "mobile", pending: true }); return true; }
+        if (operation.url === "/api/calendar/events" && operation.method === "POST") {
+            const dates = operation.metadata.localEventDates || [payload.date];
+            const ids = operation.metadata.localEventIds || [synthetic.id];
+            const query = new URL(cachedUrl, location.origin).searchParams;
+            const matching = dates.map((date, index) => ({ date, id: ids[index] })).filter(item => item.date >= query.get("start") && item.date <= query.get("end"));
+            matching.forEach(item => data.events.push({ ...payload, ...item, createdBy: document.body.dataset.userId || "", createdDeviceType: "mobile", pending: true }));
+            return matching.length > 0;
+        }
         if (!calendarMatch) return false;
         const event = data.events.find(item => String(item.id) === calendarMatch[1]);
         if (!event) return false;
@@ -359,9 +463,27 @@ function isDedicatedMobileSession() { return document.body.dataset.deviceType ==
 function currentScope() { const owner = String(document.body.dataset.accountId || ""); const user = String(document.body.dataset.userId || ""); return owner && user ? `${owner}:mobile:${user}` : ""; }
 function cacheKey(url) { return `${currentScope()}:${url.pathname}${url.search}`; }
 function jsonResponse(data, status = 200) { return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json", "X-DepannHome-Offline": "true" } }); }
-function dispatchQueueState(state, detail = {}) { pendingOfflineOperationCount().then(pending => window.dispatchEvent(new CustomEvent("depannhome:offline-queue-state", { detail: { state, pending, ...detail } }))); }
-function registerBackgroundSync() { navigator.serviceWorker?.ready.then(registration => registration.sync?.register("depannhome-offline-sync")).catch(() => {}); }
-function rememberActiveScope() { const scope = currentScope(); if (scope) putRecord(METADATA_STORE, { key: "activeScope", value: scope }).catch(() => {}); }
+function dispatchQueueState(state, detail = {}) {
+    pendingOfflineOperationCount()
+        .then(pending => window.dispatchEvent(new CustomEvent("depannhome:offline-queue-state", { detail: { state, pending, ...detail } })))
+        .catch(error => {
+            console.error("[offline] Lecture de la file impossible :", error.name || "ERROR");
+            window.dispatchEvent(new CustomEvent("depannhome:offline-queue-state", { detail: { state: "error", pending: null, message: "Impossible de lire la file hors ligne." } }));
+        });
+}
+function registerBackgroundSync() {
+    navigator.serviceWorker?.ready.then(registration => registration.sync?.register("depannhome-offline-sync")).catch(error => {
+        console.error("[offline] Synchronisation en arrière-plan indisponible :", error.name || "ERROR");
+        dispatchQueueState("error", { message: "L’envoi en arrière-plan est indisponible. Gardez l’application ouverte pour synchroniser." });
+    });
+}
+function rememberActiveScope() {
+    const scope = currentScope();
+    if (scope) putRecord(METADATA_STORE, { key: "activeScope", value: scope }).catch(error => {
+        console.error("[offline] Contexte de synchronisation indisponible :", error.name || "ERROR");
+        dispatchQueueState("error", { message: "Le contexte de synchronisation en arrière-plan est indisponible." });
+    });
+}
 
 function openDatabase() {
     return new Promise((resolve, reject) => {
@@ -381,12 +503,17 @@ function openDatabase() {
 async function transact(storeName, mode, operation) {
     const database = await openDatabase();
     return new Promise((resolve, reject) => {
-        const transaction = database.transaction(storeName, mode);
-        const request = operation(transaction.objectStore(storeName));
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-        transaction.oncomplete = () => database.close();
-        transaction.onerror = () => { database.close(); reject(transaction.error); };
+        try {
+            const transaction = database.transaction(storeName, mode);
+            const request = operation(transaction.objectStore(storeName));
+            let result;
+            request.onsuccess = () => { result = request.result; };
+            transaction.oncomplete = () => { database.close(); resolve(result); };
+            transaction.onabort = transaction.onerror = () => { database.close(); reject(transaction.error || request.error || new Error("Transaction hors ligne impossible.")); };
+        } catch (error) {
+            database.close();
+            reject(error);
+        }
     });
 }
 function getAll(store) { return transact(store, "readonly", objectStore => objectStore.getAll()); }

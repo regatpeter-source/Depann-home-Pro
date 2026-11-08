@@ -16,7 +16,7 @@ import { allocateBillingNumber } from "./billing-numbering.js";
 import { hasAccountingWorkspaceAccess } from "./workstation-permissions.js";
 import { isElectronicInvoicingOAuthCallback } from "./electronic-invoicing.js";
 import { DELAYED_PAYMENT_METHODS, declareDelayedPayment, loadDelayedPayments, reviewDelayedPayment } from "./delayed-payments.js";
-import { buildB2cReportCsv, loadB2cReport, loadB2cReports, prepareB2cReport } from "./b2c-transaction-export.js";
+import { B2C_CREDIT_NOTE_MESSAGE, buildB2cReportCsv, loadB2cReport, loadB2cReports, prepareB2cReport } from "./b2c-transaction-export.js";
 import { strictDateOnly } from "./date-validation.js";
 
 const AID_TYPES = new Set(["cee", "maprimerenov", "coup_de_pouce", "eco_ptz", "regional", "departmental", "supplier", "manufacturer", "custom"]);
@@ -380,6 +380,7 @@ export function registerAccountingRoutes(app, requireAuthentication) {
         const ownerId = getAccountOwnerId(request);
         const report = await loadB2cReport(ownerId, batchId);
         if (!report) return response.status(404).json({ message: "Lot e-reporting introuvable." });
+        if (report.hasCreditNotes) return response.status(409).json({ message: B2C_CREDIT_NOTE_MESSAGE });
         const content = Buffer.from(buildB2cReportCsv(report), "utf8");
         await getPool().query(`INSERT INTO depannhome_b2c_report_events(owner_id,batch_id,actor_id,event_type,details) VALUES($1,$2,$3,'downloaded_local',$4::jsonb)`, [ownerId, batchId, request.user.sub, JSON.stringify({ format: "csv", transmissionStatus: "not_transmitted" })]);
         response.set({ "X-Ereporting-Status": "prepared-local-not-transmitted" });

@@ -143,4 +143,30 @@ Un technicien possède son propre identifiant et mot de passe, mais son nom et s
 
 Une modification est envoyée immédiatement lorsqu’un réseau est disponible. En mode hors ligne, elle est mise en attente puis synchronisée au retour de la connexion, au retour de l’application au premier plan et lors d’une vérification automatique silencieuse toutes les 90 secondes. Après le premier chargement, cette vérification ne télécharge que les dossiers créés, modifiés ou supprimés depuis la synchronisation précédente. Le bouton **Synchroniser** de l’écran Clients permet aussi de lancer l’opération manuellement.
 
+## Mode terrain hors ligne
+
+Sur les postes mobiles Admin Mobile, Chef d’équipe et Technicien, le panneau **Mode terrain** affiche le nombre d’envois du planning, des rapports et des messages encore sur l’appareil. Les dossiers clients ont une synchronisation distincte. Un conflit bloque les envois suivants dans leur ordre d’enregistrement ; **Synchroniser maintenant** permet de retenter explicitement l’opération bloquée et la synchronisation des dossiers. Si le problème persiste, conserver les données du navigateur et contacter l’administrateur.
+
+Après une première connexion et l’installation de l’application, **Préparer aujourd’hui** actualise les vues jour, semaine et mois du planning, les dossiers clients et les rapports accessibles des interventions du jour. Une réponse provenant du cache ne confirme pas une préparation fraîche et les envois en attente doivent d’abord être synchronisés. Les rapports non autorisés, autres dates, fichiers et fonctions non préparés peuvent nécessiter une connexion ; la validation administrative finale et les fonctions exclues de la file ne sont pas promises hors ligne. Les données restent propres à l’entreprise et à l’utilisateur ; une reprise est refusée par le serveur si la session active ne correspond pas au contexte de l’opération.
+
+Les reprises utilisent des identifiants d’opération pour réduire les doublons, mais une interruption du serveur entre l’action métier et la finalisation de sa trace peut encore nécessiter un contrôle manuel. La synchronisation en arrière-plan dépend du navigateur : laisser l’application ouverte jusqu’à l’absence d’envois en attente et ne pas supprimer son stockage avant synchronisation.
+
 La prise de photo utilise un champ fichier compatible caméra mobile (`capture="environment"`) quand le navigateur le permet. Évitez les photos trop lourdes et privilégiez des documents compressés.
+
+## Stocks et véhicules
+
+L’écran Stock affiche le total de chaque article et sa répartition par dépôt et véhicule, calculée sur l’ensemble des mouvements, y compris ceux des emplacements inactifs, même si l’historique affiché est limité aux 200 derniers. Le seuil d’alerte concerne le total de l’entreprise ; un article actif est signalé lorsque ce total atteint ou passe sous son seuil. L’écran Véhicules affiche également le stock connu de chaque véhicule.
+
+Les postes administratifs autorisés peuvent transférer des quantités entre deux emplacements actifs. Le serveur vérifie le solde de l’emplacement source et enregistre la sortie et l’entrée dans une seule transaction. Le total de l’entreprise reste inchangé ; les autorisations et le contrôle de stock restent appliqués côté serveur.
+
+## Rappels internes
+
+Les règles sont activées explicitement par entreprise pour les maintenances, renouvellements de contrat et stocks faibles. Le panneau s’adresse aux rôles `admin`, `pc_standard` et `mobile_admin`, hors interface Partenaire et prise en main Support ; ces restrictions sont aussi vérifiées pour les API de rappels et les nouvelles modifications d’échéances et de seuils. Les changements de statut ou de dates du contrat et de seuil de l’article restent manuels et isolés par `owner_id`.
+
+`GET /api/automation/dashboard` lit les règles, rappels et exécutions dans un instantané PostgreSQL cohérent, limité à 300 rappels avec les ouverts en priorité. `POST /api/automation/dashboard/run` exécute uniquement les trois catégories du panneau. Les anciennes routes et les règles de devis sont conservées pour les contextes autorisés ; l’ordonnanceur peut toujours exécuter les règles de devis actives préexistantes.
+
+Le cycle de vie des contrats est isolé par entreprise : clauses personnalisées, instantané PDF de projet, archive du PDF signé importé manuellement et préparation explicite d’un renouvellement en brouillon. Une échéance de facturation périodique crée uniquement une facture brouillon ; une transaction verrouille le contrat, enregistre l’échéance unique et avance la prochaine date. L’émission et l’envoi restent des actions manuelles du module de facturation.
+
+L’ordonnanceur s’exécute au démarrage puis environ toutes les quinze minutes tant que le serveur fonctionne. Chaque recherche crée ses rappels dans une transaction : une erreur annule leurs créations et l’échec est journalisé. Un verrou PostgreSQL et une clé par règle, cible et date limitent les doublons. Les clés des anciens rappels restent reconnues ; la comparaison de leurs dates utilise le fuseau courant de PostgreSQL, qui doit rester cohérent entre déploiements. Les nouvelles règles de stock évitent aussi plusieurs rappels simultanément ouverts pour un même article et une même règle. La migration `0041_reminder_target_lookup.sql` ajoute l’index de recherche de ces cibles.
+
+Le verrou historique est conservé pour coordonner les anciennes et nouvelles instances lors d’un déploiement mixte : deux identifiants d’entreprise séparés d’un multiple de 100 000 peuvent donc se bloquer temporairement. Une interruption brutale peut laisser une ancienne exécution indiquée « en cours » ; une recherche ultérieure produit un nouvel état, mais ne répare pas cet historique. Le système n’envoie pas d’e-mail, ne modifie pas le planning et ne ferme pas automatiquement les rappels devenus obsolètes.
