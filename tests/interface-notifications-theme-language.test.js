@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { translateInterfaceText } from "../js/i18n.js";
+import { applyInterfaceLanguage, initializeInterfaceLanguage, translateInterfaceText } from "../js/i18n.js";
 
 const serverCollaboration = readFileSync(new URL("../server/collaboration.js", import.meta.url), "utf8");
 const clientCollaboration = readFileSync(new URL("../js/collaboration.js", import.meta.url), "utf8");
@@ -60,6 +60,8 @@ test("le thème sombre couvre les écrans et les principaux espaces de travail",
 
 
 test("la langue anglaise traduit le shell, les paramètres et les écrans dynamiques", () => {
+    assert.equal(translateInterfaceText("Bonjour"), "Hello");
+    assert.equal(translateInterfaceText("Utilisateur connecté"), "Signed-in user");
     assert.equal(translateInterfaceText("Enregistrer"), "Save changes");
     assert.equal(translateInterfaceText("Rechercher"), "Search");
     assert.equal(translateInterfaceText("Chercher"), "Search");
@@ -94,4 +96,61 @@ test("la langue anglaise traduit le shell, les paramètres et les écrans dynami
     const index = readFileSync(new URL("../index.html", import.meta.url), "utf8");
     assert.match(index, /<html lang="fr" translate="no" class="notranslate">/);
     assert.doesNotMatch(i18n, /Économiser|Chercheur/);
+});
+
+test("les noms protégés restent inchangés lors des traductions et mutations dynamiques", t => {
+    const keys = ["document", "window", "Node", "MutationObserver", "localStorage"];
+    const originals = new Map(keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+    t.after(() => keys.forEach(key => {
+        const descriptor = originals.get(key);
+        if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+        else delete globalThis[key];
+    }));
+
+    const element = (tagName, protectedText = false) => ({
+        nodeType: 1,
+        tagName,
+        childNodes: [],
+        hasAttribute: () => false,
+        closest: () => protectedText ? {} : null
+    });
+    const name = element("STRONG", true);
+    const label = element("SPAN");
+    const body = element("BODY");
+    body.childNodes.push(name, label);
+    let handleMutations;
+    const globals = {
+        document: { body, documentElement: { lang: "fr" } },
+        window: { addEventListener() {} },
+        Node: { ELEMENT_NODE: 1, TEXT_NODE: 3 },
+        MutationObserver: class {
+            constructor(callback) { handleMutations = callback; }
+            observe() {}
+        },
+        localStorage: { getItem: () => JSON.stringify({ lang: "en" }) }
+    };
+    for (const [key, value] of Object.entries(globals)) {
+        Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
+    }
+
+    initializeInterfaceLanguage();
+    const identity = { nodeType: 3, nodeValue: "Entreprise", parentElement: name };
+    const greeting = { nodeType: 3, nodeValue: "Bonjour", parentElement: label };
+    name.childNodes.push(identity);
+    label.childNodes.push(greeting);
+    handleMutations([
+        { type: "childList", target: name, addedNodes: [identity] },
+        { type: "childList", target: label, addedNodes: [greeting] }
+    ]);
+    assert.equal(identity.nodeValue, "Entreprise");
+    assert.equal(greeting.nodeValue, "Hello");
+    identity.nodeValue = "Accueil";
+    handleMutations([{ type: "characterData", target: identity }]);
+    assert.equal(identity.nodeValue, "Accueil");
+    applyInterfaceLanguage("fr");
+    assert.equal(greeting.nodeValue, "Bonjour");
+    assert.equal(identity.nodeValue, "Accueil");
+    applyInterfaceLanguage("en");
+    assert.equal(greeting.nodeValue, "Hello");
+    assert.equal(identity.nodeValue, "Accueil");
 });

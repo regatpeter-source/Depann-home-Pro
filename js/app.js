@@ -2,12 +2,14 @@ import { initializeAuthentication, restoreApplicationShell, signOut } from "./au
 import { initializeClientSynchronization } from "./client-sync.js?v=132";
 import { initializeCollaboration } from "./collaboration.js?v=14";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication } from "./navigation.js?v=550";
+import { initializeNavigation, refreshApplication, synchronizeActiveCompanyIdentity } from "./navigation.js?v=551";
+import { updateDesktopGreeting } from "./desktop-greeting.js?v=1";
+import { getActiveCompanyId, getSessionDisplayName, sessionAccessIdentity } from "./session-context.js?v=1";
 import { renderError } from "./ui.js?v=44";
 import { getSettings } from "./storage.js?v=45";
 import { FONT_OPTIONS } from "./config.js?v=139";
 import { installClientSessionGuard, onAuthenticationRequired, onClientSessionReplaced } from "./client-session.js?v=12";
-import { initializeInterfaceLanguage } from "./i18n.js?v=6";
+import { initializeInterfaceLanguage } from "./i18n.js?v=7";
 import { stopTerrainLocationSharing } from "./operations-map.js?v=10";
 import { initializeOfflineTools } from "./offline-tools.js?v=1";
 
@@ -65,22 +67,16 @@ function startAdministratorSessionMonitor(user) {
             redirectToAuthentication(session?.sessionReplaced ? "replaced" : "expired");
             return;
         }
-        if (sessionAccessIdentity(session.user) !== initialAccessIdentity) window.location.reload();
+        if (sessionAccessIdentity(session.user) !== initialAccessIdentity) {
+            window.location.reload();
+            return;
+        }
+        synchronizeActiveCompanyIdentity(session.user);
     };
     const interval = user.deviceType === "desktop" ? 3_000 : 30_000;
     administratorSessionMonitor = window.setInterval(check, interval);
     window.addEventListener("focus", check);
     document.addEventListener("visibilitychange", check);
-}
-
-function sessionAccessIdentity(user) {
-    return JSON.stringify({
-        id: String(user?.id || ""),
-        role: String(user?.role || ""),
-        deviceType: String(user?.deviceType || ""),
-        canManageCalendar: user?.canManageCalendar === true,
-        supportSessionId: String(user?.supportSessionId || "")
-    });
 }
 
 function redirectToAuthentication(reason = "") {
@@ -161,7 +157,11 @@ function showAuthenticatedUser(user) {
     const logoutButton = document.getElementById("logoutBtn");
 
     if (session) session.hidden = false;
-    if (email) email.textContent = user.fullName || user.username || "Utilisateur connecté";
+    const userName = getSessionDisplayName(user);
+    if (email) {
+        email.toggleAttribute("data-no-translate", Boolean(userName));
+        email.textContent = userName || "Utilisateur connecté";
+    }
     if (workstationLabel) workstationLabel.textContent = activeWorkstationLabel(user.role, user.deviceType, user.isSupportControl);
     const sections = Array.isArray(user.departments) ? user.departments.filter(Boolean) : user.department ? [user.department] : [];
     if (mobileUserSections) {
@@ -172,10 +172,10 @@ function showAuthenticatedUser(user) {
     if (activeCompanyBadge) activeCompanyBadge.hidden = !user.activeCompanyName;
     document.body.dataset.userId = user.id || "";
     document.body.dataset.accountId = user.accountOwnerId || user.id || "";
-    document.body.dataset.activeCompanyId = user.activeCompanyId || user.accountOwnerId || user.id || "";
+    document.body.dataset.activeCompanyId = getActiveCompanyId(user);
     document.body.dataset.activeCompanyName = user.activeCompanyName || "";
     document.body.dataset.role = user.role || "";
-    document.body.dataset.userName = user.fullName || user.username || "";
+    document.body.dataset.userName = userName;
     document.body.dataset.creator = user.isCreator && !user.isSupportControl ? "true" : "false";
     document.body.dataset.platformCreator = user.isCreator ? "true" : "false";
     document.body.dataset.supportControl = user.isSupportControl ? "true" : "false";
@@ -200,6 +200,7 @@ function showAuthenticatedUser(user) {
     document.body.dataset.organizationLicense = user.organization?.licenseType || "depannhome_standard";
     document.body.dataset.subscriptionTier = user.organization?.subscriptionTier || "pro";
     document.body.dataset.organizationFeatures = JSON.stringify(user.organization?.features || {});
+    updateDesktopGreeting(user);
     window.dispatchEvent(new CustomEvent("depannhome:offline-session-ready"));
     renderSupportControlBanner(user);
     updateDeviceMode();

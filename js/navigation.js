@@ -5,6 +5,8 @@ import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocume
 import { renderAccounting } from "./accounting.js?v=39";
 import { renderPurchases } from "./purchases.js?v=136";
 import { renderBusinessSuite } from "./business-suite.js?v=9";
+import { updateDesktopGreeting } from "./desktop-greeting.js?v=1";
+import { getActiveCompanyId, getSessionDisplayName } from "./session-context.js?v=1";
 import { renderMobileInstallationQr, showMobileInstallationQr } from "./mobile-installation-qr.js?v=1";
 import { canAccessReminderDashboard, mountReminderDashboard, reminderDashboardMarkup } from "./reminder-dashboard.js?v=2";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=10";
@@ -514,9 +516,15 @@ async function refreshOrganizationAccess() {
         const response = await fetch("/api/auth/session", { credentials: "same-origin", cache: "no-store" });
         if (!response.ok) return false;
         const session = await response.json();
-        const organization = session.user?.organization;
-        if (!organization?.features) return false;
+        if (!session.authenticated || !session.user) return false;
+        const activeCompanyId = getActiveCompanyId(session.user);
+        if (activeCompanyId !== String(document.body.dataset.activeCompanyId || "")) {
+            window.location.reload();
+            return true;
+        }
         synchronizeActiveCompanyIdentity(session.user);
+        const organization = session.user.organization;
+        if (!organization?.features) return false;
         const previous = `${document.body.dataset.organizationInterface || ""}:${document.body.dataset.subscriptionTier || ""}:${document.body.dataset.organizationFeatures || ""}:${document.body.dataset.canAccessBilling || "false"}:${document.body.dataset.canAccessAccounting || "false"}:${document.body.dataset.canAccessCompanyEmail || "false"}`;
         const nextFeatures = JSON.stringify(organization.features);
         const next = `${organization.interfaceType || "standard"}:${organization.subscriptionTier || "pro"}:${nextFeatures}:${session.user.canAccessBilling ? "true" : "false"}:${session.user.canAccessAccounting ? "true" : "false"}:${session.user.canAccessCompanyEmail ? "true" : "false"}`;
@@ -533,14 +541,25 @@ async function refreshOrganizationAccess() {
     }
 }
 
-function synchronizeActiveCompanyIdentity(user) {
+export function synchronizeActiveCompanyIdentity(user) {
     const companyName = String(user?.activeCompanyName || "").trim();
     const activeCompanyName = document.getElementById("activeCompanyName");
     const activeCompanyBadge = document.getElementById("activeCompanyBadge");
-    document.body.dataset.activeCompanyId = String(user?.activeCompanyId || user?.accountOwnerId || "");
+    const userName = getSessionDisplayName(user);
+    const userLabel = document.getElementById("userEmail");
+    const previousUserName = document.body.dataset.userName || "";
+    document.body.dataset.activeCompanyId = getActiveCompanyId(user);
     document.body.dataset.activeCompanyName = companyName;
-    if (activeCompanyName) activeCompanyName.textContent = companyName;
+    document.body.dataset.userName = userName;
+    if (userLabel) {
+        userLabel.toggleAttribute("data-no-translate", Boolean(userName));
+        if ((userName || previousUserName) && userLabel.textContent !== (userName || "Utilisateur connecté")) {
+            userLabel.textContent = userName || "Utilisateur connecté";
+        }
+    }
+    if (activeCompanyName && activeCompanyName.textContent !== companyName) activeCompanyName.textContent = companyName;
     if (activeCompanyBadge) activeCompanyBadge.hidden = !companyName;
+    updateDesktopGreeting(user);
 }
 
 function bindEvents() {

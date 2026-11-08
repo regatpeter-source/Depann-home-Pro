@@ -150,6 +150,10 @@ textarea{
     box-shadow:0 3px 10px rgba(0,0,0,.08);
 }
 
+.desktop-greeting{
+    display:none;
+}
+
 .header-content{
     max-width:1200px;
     margin:auto;
@@ -6770,7 +6774,7 @@ footer{
 ========================== */
 body.desktop-device{
     --desktop-sidebar-width:216px;
-    --desktop-header-height:64px;
+    --desktop-header-height:102px;
     --desktop-radius:7px;
     --primary:#2f607d;
     --secondary:#4f806f;
@@ -6796,6 +6800,22 @@ body.desktop-device #authRoot{
     overflow:hidden;
 }
 
+body.desktop-device[data-support-control="true"]{
+    display:flex;
+    flex-direction:column;
+    height:100vh;
+}
+
+body.desktop-device[data-support-control="true"] > .support-control-banner{
+    flex:none;
+}
+
+body.desktop-device[data-support-control="true"] #authRoot{
+    flex:1 1 0;
+    min-height:0;
+    height:auto;
+}
+
 body.desktop-device .topbar{
     z-index:20;
     grid-column:1/-1;
@@ -6806,11 +6826,49 @@ body.desktop-device .topbar{
     box-shadow:0 1px 4px rgba(15,23,42,.08);
 }
 
+body.desktop-device .desktop-greeting:not([hidden]){
+    display:flex;
+    align-items:center;
+    gap:.4em;
+    height:38px;
+    min-width:0;
+    overflow:hidden;
+    color:var(--text);
+    font-size:clamp(20px,1.8vw,25px);
+    font-weight:700;
+    line-height:1.2;
+    white-space:nowrap;
+}
+
+body.desktop-device .desktop-greeting > strong,
+body.desktop-device .desktop-greeting-company > strong{
+    min-width:0;
+    overflow:hidden;
+    text-overflow:ellipsis;
+}
+
+body.desktop-device .desktop-greeting > strong{
+    flex:0 1 auto;
+}
+
+body.desktop-device .desktop-greeting-company:not([hidden]){
+    display:flex;
+    flex:0 1 auto;
+    align-items:baseline;
+    gap:.4em;
+    min-width:0;
+}
+
 body.desktop-device .header-content{
     width:100%;
     max-width:none;
     height:50px;
     gap:11px;
+}
+
+body.desktop-device .header-content > .logo,
+body.desktop-device .header-content > div:not(.user-session){
+    flex-shrink:0;
 }
 
 body.desktop-device .logo{
@@ -6829,15 +6887,29 @@ body.desktop-device .topbar p{
 }
 
 body.desktop-device .user-session{
+    flex:1 1 auto;
     flex-wrap:nowrap;
+    min-width:0;
     gap:6px;
     font-size:12px;
 }
 
+body.desktop-device .user-session > :not(.active-work-context){
+    flex-shrink:0;
+}
+
 body.desktop-device .active-work-context{
+    min-width:0;
     gap:6px;
     padding:5px 7px;
     border-radius:var(--desktop-radius);
+}
+
+body.desktop-device .pc-workstation-name,
+body.desktop-device .active-company-badge{
+    min-width:0;
+    overflow:hidden;
+    text-overflow:ellipsis;
 }
 
 body.desktop-device .active-company-badge{
@@ -7966,6 +8038,15 @@ body.desktop-device.dark-theme{
     --border:#3b4a60;
     background:var(--bg);
     color:var(--text);
+}
+
+body.desktop-device.dark-theme .active-company-badge{
+    background:#143323;
+    color:#bbf7d0;
+}
+
+body.desktop-device.dark-theme .active-company-badge strong{
+    color:#bbf7d0;
 }
 
 body.desktop-device.dark-theme :is(.topbar,#breadcrumb,.brand-card,.dashboard-panel,.dashboard-card,.dashboard-kpi-card,.dashboard-administrative-note,.client-panel,.client-files-zone,.client-workspace-tabs,.client-workspace-tab.active,.billing-panel,.accounting-panel,.report-panel,.group-panel,.connector-panel,.settings-hub-heading,.settings-navigation-card,.partner-mission-card,.partner-mailbox-browser,.creator-workspace,.creator-form,.calendar-panel,.calendar-form-panel,.calendar-grid-panel,.calendar-view-switcher,.calendar-technician-filter,.calendar-weekdays,.calendar-timeline,.calendar-timeline-header,.calendar-timeline-all-day,.calendar-time-axis){

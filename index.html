@@ -18,7 +18,7 @@
 
     <link rel="icon" href="assets/logo.png.png" type="image/png">
 
-    <link rel="stylesheet" href="css/style.css?v=318">
+    <link rel="stylesheet" href="css/style.css?v=319">
     <link rel="stylesheet" href="vendor/maplibre/maplibre-gl.css?v=6.11.2">
     <link rel="stylesheet" href="css/partner-dialogue.css?v=7">
     <link rel="stylesheet" href="css/report-editor.css?v=8">
@@ -31,6 +31,16 @@
     <div id="authRoot">
 
     <header class="topbar">
+
+        <div id="desktopGreeting" class="desktop-greeting" aria-live="polite" aria-atomic="true" hidden>
+            <span>Bonjour</span>
+            <strong id="desktopGreetingName" data-no-translate hidden></strong>
+            <strong id="desktopGreetingDefault" hidden>Utilisateur connecté</strong>
+            <span id="desktopGreetingCompanyContext" class="desktop-greeting-company" hidden>
+                <span aria-hidden="true">—</span>
+                <strong id="desktopGreetingCompany" data-no-translate></strong>
+            </span>
+        </div>
 
         <div class="header-content">
 
@@ -51,7 +61,7 @@
                 <span class="active-work-context">
                     <span class="pc-workstation-name"><span id="workstationLabel">Poste</span> · <strong id="userEmail"></strong></span>
                     <span id="mobileUserSections" class="mobile-user-sections" hidden></span>
-                    <span id="activeCompanyBadge" class="active-company-badge" hidden>Entreprise active · <strong id="activeCompanyName"></strong></span>
+                    <span id="activeCompanyBadge" class="active-company-badge" hidden>Entreprise active · <strong id="activeCompanyName" data-no-translate></strong></span>
                 </span>
                 <label id="groupCompanySelector" class="group-company-selector" hidden>Entreprise <select aria-label="Entreprise active"></select></label>
                 <span class="collaboration-sync" data-collaboration-sync="syncing" title="Connexion en temps réel" aria-label="Connexion en temps réel">●</span>
@@ -213,7 +223,7 @@
 
     </div>
 
-    <script type="module" src="js/app.js?v=528"></script>
+    <script type="module" src="js/app.js?v=529"></script>
 
 </body>
 

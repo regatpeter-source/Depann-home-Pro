@@ -42,12 +42,13 @@ test("les nouveaux postes mobiles démarrent sans droit sauf autorisation explic
 test("le droit circule dans les sessions et l’administration des membres", () => {
     const auth = read("server/auth.js");
     const application = read("js/app.js");
+    const sessionContext = read("js/session-context.js");
     const navigation = read("js/navigation.js");
     assert.match(auth, /can_manage_calendar AS "canManageCalendar"/);
     assert.match(auth, /canManageCalendar: MOBILE_CALENDAR_ROLES\.has\(user\.role\)/);
     assert.match(auth, /can_manage_calendar = \$9/);
     assert.match(application, /dataset\.canManageCalendar = user\.canManageCalendar \? "true" : "false"/);
-    assert.match(application, /canManageCalendar: user\?\.canManageCalendar === true/);
+    assert.match(sessionContext, /canManageCalendar: user\?\.canManageCalendar === true/);
     assert.match(navigation, /name="canManageCalendar"/);
     assert.match(navigation, /\["mobile_admin", "technician", "team_lead"\]\.includes\(roleInput\.value\)/);
     assert.match(navigation, /Autoriser la gestion du planning/);

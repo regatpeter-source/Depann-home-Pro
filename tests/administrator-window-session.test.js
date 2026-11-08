@@ -5,6 +5,7 @@ import { isPcSessionScope } from "../server/auth.js";
 
 const authServer = readFileSync(new URL("../server/auth.js", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
+const sessionContextSource = readFileSync(new URL("../js/session-context.js", import.meta.url), "utf8");
 const clientSessionSource = readFileSync(new URL("../js/client-session.js", import.meta.url), "utf8");
 const authClient = readFileSync(new URL("../js/auth.js", import.meta.url), "utf8");
 const collaborationClient = readFileSync(new URL("../js/collaboration.js", import.meta.url), "utf8");
@@ -74,8 +75,8 @@ test("un changement de rôle recharge automatiquement le poste déjà connecté"
     assert.match(appSource, /const initialAccessIdentity = sessionAccessIdentity\(user\)/);
     assert.match(appSource, /sessionAccessIdentity\(session\.user\) !== initialAccessIdentity/);
     assert.match(appSource, /window\.location\.reload\(\)/);
-    assert.match(appSource, /role: String\(user\?\.role \|\| ""\)/);
-    assert.match(appSource, /deviceType: String\(user\?\.deviceType \|\| ""\)/);
+    assert.match(sessionContextSource, /role: String\(user\?\.role \|\| ""\)/);
+    assert.match(sessionContextSource, /deviceType: String\(user\?\.deviceType \|\| ""\)/);
     assert.match(appSource, /window\.addEventListener\("focus", check\)/);
     assert.match(appSource, /document\.addEventListener\("visibilitychange", check\)/);
 });

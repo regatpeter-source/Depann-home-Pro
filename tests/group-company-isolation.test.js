@@ -50,10 +50,10 @@ test("les principales données métier sont filtrées par le owner_id actif", ()
 test("le poste actif affiche en permanence l’entreprise standard ou active du groupe", () => {
     assert.match(html, /class="pc-workstation-name"><span id="workstationLabel">Poste<\/span> · <strong id="userEmail"><\/strong>/);
     assert.match(appClient, /workstationLabel\.textContent = activeWorkstationLabel\(user\.role, user\.deviceType, user\.isSupportControl\)/);
-    assert.match(html, /id="activeCompanyBadge"[^>]*>Entreprise active · <strong id="activeCompanyName"><\/strong>/);
+    assert.match(html, /id="activeCompanyBadge"[^>]*>Entreprise active · <strong id="activeCompanyName" data-no-translate><\/strong>/);
     assert.match(appClient, /activeCompanyName\.textContent = user\.activeCompanyName \|\| ""/);
     assert.match(appClient, /activeCompanyBadge\.hidden = !user\.activeCompanyName/);
-    assert.match(appClient, /document\.body\.dataset\.activeCompanyId = user\.activeCompanyId/);
+    assert.match(appClient, /document\.body\.dataset\.activeCompanyId = getActiveCompanyId\(user\)/);
     assert.match(appClient, /document\.body\.dataset\.activeCompanyName = user\.activeCompanyName/);
     const completeLogin = auth.slice(auth.indexOf("async function completeLogin"), auth.indexOf("async function isCreatorTotpEnabled"));
     assert.match(completeLogin, /activeCompanyName = groupCompany\?\.companyName \|\| await resolveCompanyName\(accountOwnerId\)/);

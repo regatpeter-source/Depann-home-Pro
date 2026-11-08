@@ -16,6 +16,8 @@ const ENGLISH = new Map(Object.entries({
     "Devenir partenaire": "Become a partner",
     "Déjà partenaire ?": "Already a partner?",
     "Assistant de dépannage professionnel": "Professional troubleshooting assistant",
+    "Bonjour": "Hello",
+    "Utilisateur connecté": "Signed-in user",
     "Rechercher un module, un client ou une intervention...": "Search for a module, client or appointment...",
     "Rechercher une marque, une gamme ou un produit...": "Search for a brand, range or product...",
     "Accueil": "Home",
@@ -844,6 +846,8 @@ export function initializeInterfaceLanguage() {
             if (translating) return;
             translating = true;
             records.forEach(record => {
+                const target = record.type === "characterData" ? record.target.parentElement : record.target;
+                if (target?.closest("[data-no-translate]")) return;
                 if (record.type === "characterData") translateTextNode(record.target, true);
                 else if (record.type === "attributes") translateAttribute(record.target, record.attributeName, true);
                 else record.addedNodes.forEach(node => {

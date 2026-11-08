@@ -10,6 +10,10 @@ Le Créateur choisit et peut modifier à tout moment le type d’interface (`par
 
 La migration est additive : au démarrage, chaque compte propriétaire historique reçoit une organisation Standard. `depannhome_organization_audit` trace toute création ou modification d’interface, de secteur ou de licence avec son auteur ; la Console Créateur affiche cet historique. Les badges de réseau sont calculés sans dupliquer les comptes : 🟢 Entreprise Depann’Home Pro, 🔵 Partenaire et 🟣 Groupe.
 
+## En-tête du poste PC
+
+Sur une session PC authentifiée, une ligne fixe en haut affiche « Bonjour », le nom complet de l’utilisateur et le nom de l’entreprise active. Les noms proviennent de la session ; un nom d’utilisateur remplace le nom complet absent, et le nom d’entreprise est omis s’il n’est pas disponible. Les noms trop longs sont tronqués visuellement et restent disponibles au survol. Le bandeau n’apparaît pas sur mobile ou avant connexion. Il reste en place pendant le défilement, suit le thème et la langue de l’application sans traduire les noms, et est actualisé avec la session. Si l’entreprise active change, l’application recharge la vue avant d’en afficher le nouveau contexte. En prise en main Support, l’avertissement reste prioritaire au-dessus du bandeau et l’espace de travail utilise la hauteur restante.
+
 ## Accueil des nouveaux postes mobiles
 
 Après validation et commit de la création d’un Technicien, Chef d’équipe, Poste Admin Mobile ou Commercial (compte PC/mobile), le serveur envoie automatiquement un e-mail d’accueil via Brevo SMTP. Il contient l’identifiant et les liens vers `/installer-mobile` et `/connexion`, mais aucun mot de passe, jeton de connexion ou code d’autorisation. Le mot de passe initial doit être communiqué séparément par un canal sécurisé. La procédure habituelle d’autorisation de l’appareil et de validation par code reste obligatoire.
