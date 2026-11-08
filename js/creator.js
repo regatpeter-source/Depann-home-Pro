@@ -1,7 +1,7 @@
 import { ROUTES } from "./config.js?v=105";
 import { clearSearch, getContainer, setPage } from "./ui.js?v=44";
 import { escapeHtml } from "./utils.js?v=44";
-import { renderCreatorConnectors } from "./connectors.js?v=12";
+import { renderCreatorConnectors } from "./connectors.js?v=13";
 import { renderHealthDashboard } from "./health-dashboard.js?v=1";
 import { creatorHistoryPresentation } from "./creator-history.js?v=2";
 import { markDesktopWorkspaceDraftSaved } from "./desktop-workspace.js?v=6";
@@ -215,7 +215,7 @@ async function renderCreatorSupportRequests() {
     const result = await api("/api/creator/support-requests");
     if (!result.ok) return showFeedback(result.message || "Impossible de charger les demandes Support.", true);
     const requests = result.data.requests || [];
-    workspace.innerHTML = `<section class="creator-form"><div class="form-heading"><div><p class="eyebrow">Entreprises internes</p><h3>Demandes Support</h3></div><span class="creator-state">${requests.length} demande${requests.length > 1 ? "s" : ""}</span></div><div class="creator-network-list">${requests.length ? requests.map(item => `<form class="creator-network-company" data-support-request="${escapeHtml(item.id)}"><div><strong>${escapeHtml(item.subject || item.companyName || item.senderName || item.senderUsername)}</strong>${item.category ? `<span class="creator-state">${escapeHtml(item.category)}</span>` : ""}<p>${escapeHtml(item.message)}</p>${item.technicalContext && Object.keys(item.technicalContext).length ? `<details><summary>Contexte du poste</summary><p>${Object.entries(item.technicalContext).map(([key, value]) => `${escapeHtml(key)} : ${escapeHtml(value)}`).join(" · ")}</p></details>` : ""}<small>${escapeHtml(item.companyName || item.senderName || item.senderUsername)} · ${escapeHtml(formatDateTime(item.createdAt))}${item.senderEmail ? ` · ${escapeHtml(item.senderEmail)}` : ""}</small></div><div class="creator-form-actions"><select name="status">${["new", "under_review", "answered", "closed"].map(status => `<option value="${status}" ${item.status === status ? "selected" : ""}>${supportRequestStatusLabel(status)}</option>`).join("")}</select><input name="creatorNote" maxlength="2000" value="${escapeHtml(item.creatorNote || "")}" placeholder="Note interne"><button class="secondary-button">Enregistrer</button><button type="button" class="primary-button" data-request-assistance="${escapeHtml(item.id)}">Demander une assistance</button></div></form>`).join("") : '<p class="muted">Aucune demande Support.</p>'}</div></section>`;
+    workspace.innerHTML = `<section class="creator-form"><div class="form-heading"><div><p class="eyebrow">Entreprises internes</p><h3>Demandes Support</h3></div><span class="creator-state">${requests.length} demande${requests.length > 1 ? "s" : ""}</span></div><div class="creator-network-list">${requests.length ? requests.map(item => `<form class="creator-network-company" data-support-request="${escapeHtml(item.id)}"><div><strong>${escapeHtml(item.subject || item.companyName || item.senderName || item.senderUsername)}</strong>${item.category ? `<span class="creator-state">${escapeHtml(item.category)}</span>` : ""}<p>${escapeHtml(item.message)}</p><p class="support-assistance-summary">${item.assistancePreference === "control" ? "Prise en main sécurisée souhaitée" : item.assistancePreference === "diagnostic" ? "Diagnostic en lecture seule souhaité" : "Ticket sans demande d’assistance"}${item.assistancePreference ? " · Acceptation séparée par un Poste Admin nécessaire avant tout accès." : ""}</p>${item.technicalContext && Object.keys(item.technicalContext).length ? `<details><summary>Contexte du poste</summary><p>${Object.entries(item.technicalContext).map(([key, value]) => `${escapeHtml(key)} : ${escapeHtml(value)}`).join(" · ")}</p></details>` : ""}<small>${escapeHtml(item.companyName || item.senderName || item.senderUsername)} · ${escapeHtml(formatDateTime(item.createdAt))}${item.senderEmail ? ` · ${escapeHtml(item.senderEmail)}` : ""}</small></div><div class="creator-form-actions"><select name="status">${["new", "under_review", "answered", "closed"].map(status => `<option value="${status}" ${item.status === status ? "selected" : ""}>${supportRequestStatusLabel(status)}</option>`).join("")}</select><input name="creatorNote" maxlength="2000" value="${escapeHtml(item.creatorNote || "")}" placeholder="Note interne"><button class="secondary-button">Enregistrer</button><button type="button" class="primary-button" data-request-assistance="${escapeHtml(item.id)}">Demander une assistance</button></div></form>`).join("") : '<p class="muted">Aucune demande Support.</p>'}</div></section>`;
     workspace.querySelectorAll("[data-support-request]").forEach(form => form.addEventListener("submit", async event => {
         event.preventDefault();
         const update = await api(`/api/creator/support-requests/${encodeURIComponent(form.dataset.supportRequest)}`, { method: "PATCH", body: JSON.stringify(Object.fromEntries(new FormData(form))) });
@@ -226,7 +226,7 @@ async function renderCreatorSupportRequests() {
     }));
     workspace.querySelectorAll("[data-request-assistance]").forEach(button => button.addEventListener("click", () => {
         const supportRequest = requests.find(item => String(item.id) === button.dataset.requestAssistance);
-        if (supportRequest) renderCreatorAssistance({ companyOwnerId: supportRequest.ownerId, supportRequestId: supportRequest.id, reason: supportRequest.message });
+        if (supportRequest) renderCreatorAssistance({ companyOwnerId: supportRequest.ownerId, supportRequestId: supportRequest.id, reason: supportRequest.message, assistancePreference: supportRequest.assistancePreference });
     }));
 }
 
@@ -260,6 +260,7 @@ async function renderCreatorAssistance(prefill = {}) {
     if (prefill.companyOwnerId) startForm.elements.companyOwnerId.value = String(prefill.companyOwnerId);
     if (prefill.supportRequestId) startForm.elements.supportRequestId.value = String(prefill.supportRequestId);
     if (prefill.reason) startForm.elements.reason.value = String(prefill.reason).slice(0, 1000);
+    startForm.elements.accessScope.checked = prefill.assistancePreference === "control";
     workspace.querySelector("[data-assistance-start]").addEventListener("submit", async event => {
         event.preventDefault();
         const form = event.currentTarget;

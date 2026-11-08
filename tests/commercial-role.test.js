@@ -101,13 +101,13 @@ test("le planning mobile Commercial est filtré par affectation et reste en lect
     assert.doesNotMatch(client, /Cette intervention vous sera automatiquement affectée/);
 });
 
-test("le Commercial mobile démarre sur Planning et peut ouvrir le Support", () => {
+test("le Commercial mobile démarre sur Planning et peut ouvrir le Support et les Préférences", () => {
     const navigation = read("js/navigation.js");
     const styles = read("css/style.css");
     assert.match(navigation, /else if \(isCommercialMobile\(\)\) openCalendar\(\)/);
     assert.match(navigation, /else if \(isMobileDeviceContext\(\)\) openHome\(\)/);
     assert.match(navigation, /ROUTES\.home && isMobileDeviceContext\(\) && canAccessRoute\(ROUTES\.home\)/);
-    assert.match(navigation, /isCommercialMobile\(\) && !\[ROUTES\.calendar, ROUTES\.support\]\.includes\(route\)/);
+    assert.match(navigation, /isCommercialMobile\(\) && !\[ROUTES\.calendar, ROUTES\.support, ROUTES\.settings\]\.includes\(route\)/);
     assert.match(styles, /commercial"\]\.mobile-device footer \.nav-button:not\(\[data-nav="calendar"\]\):not\(\.mobile-workspace-menu-button\)\{display:none;\}/);
 });
 

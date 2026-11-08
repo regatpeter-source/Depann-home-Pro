@@ -1,6 +1,6 @@
-import { APP_VERSION, ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=139";
+import { APP_VERSION, ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=140";
 import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=251";
-import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=180";
+import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=181";
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=228";
 import { renderAccounting } from "./accounting.js?v=39";
 import { renderPurchases } from "./purchases.js?v=136";
@@ -681,6 +681,8 @@ function initializeMobileWorkspaceMenu() {
     const footer = document.querySelector("#authRoot > footer");
     const quickActions = document.querySelector(".quick-actions");
     if (!footer || !quickActions) return;
+    const preferencesButton = quickActions.querySelector("#settingsBtn");
+    if (preferencesButton) preferencesButton.textContent = "Préférences";
     const menuButton = document.createElement("button");
     menuButton.type = "button";
     menuButton.className = "nav-button mobile-workspace-menu-button";
@@ -741,7 +743,8 @@ function renderMobileWorkspaceFolders(container, quickActions) {
         ["Gestion", ["billingBtn", "accountingBtn", "purchasesBtn"]],
         ["Ressources", ["businessSuiteBtn"]],
         ["Communication", ["companyEmailBtn"]],
-        ["Ressources et compte", ["libraryBtn", "settingsBtn"]],
+        ["Ressources et compte", ["libraryBtn"]],
+        ["Préférences", ["settingsBtn"]],
         ["Aide et support", ["supportTicketBtn"]]
     ];
     container.innerHTML = groups.map(([title, ids], index) => {
@@ -787,7 +790,7 @@ function isMobileDeviceContext() {
 function isMenuAllowed(roles, route = "") {
     if (!Array.isArray(roles) || !roles.includes(document.body.dataset.role)) return false;
     if (isDesktopDevice() && route === ROUTES.library) return false;
-    if (isCommercialMobile() && ![ROUTES.calendar, ROUTES.support].includes(route)) return false;
+    if (isCommercialMobile() && ![ROUTES.calendar, ROUTES.support, ROUTES.settings].includes(route)) return false;
     if (route === ROUTES.billing && ["pc_standard", "commercial", "accountant"].includes(document.body.dataset.role) && document.body.dataset.canAccessBilling !== "true") return false;
     if (route === ROUTES.accounting && ["pc_standard", "commercial", "accountant"].includes(document.body.dataset.role) && document.body.dataset.canAccessAccounting !== "true") return false;
     if (route === ROUTES.companyEmail && document.body.dataset.canAccessCompanyEmail !== "true") return false;
@@ -819,6 +822,7 @@ function isLocalCompanyAdministrator() {
 }
 
 function canAccessSettingsSection(section) {
+    if (document.body.dataset.deviceType === "mobile") return section === "personalization";
     if (document.body.dataset.supportControl === "true") return ["documents", "personalization"].includes(section);
     if (document.body.dataset.creator === "true") return true;
     if (["subscription", "storage", "documents", "company", "users", "groups", "imports"].includes(section) && !isLocalCompanyAdministrator()) return false;
@@ -836,6 +840,7 @@ function canAccessSettingsSection(section) {
 }
 
 function isOrganizationRouteEnabled(route) {
+    if (route === ROUTES.settings && document.body.dataset.deviceType === "mobile") return true;
     if (document.body.dataset.creator === "true") return true;
     if (route === ROUTES.settings && organizationFeatureEnabled("partnerConnections")) return true;
     if (route === ROUTES.settings && organizationFeatureEnabled("partnerMissions")) return true;
@@ -1937,19 +1942,21 @@ function renderSettings(options = {}) {
         openHome();
         return;
     }
+    const mobilePreferences = document.body.dataset.deviceType === "mobile";
+    if (mobilePreferences) options = { ...options, legacy: true, personalizationOnly: true };
     if (!options.legacy) {
         renderSettingsWorkspace(options);
         return;
     }
     clearSearch();
     resetSelection("all");
-    setPage("Paramètres", ROUTES.settings, "detail");
+    setPage(mobilePreferences ? "Préférences" : "Paramètres", ROUTES.settings, "detail");
 
     const container = getContainer();
     const card = document.createElement("article");
     card.className = "brand-card full-card procedure-card settings-card";
 
-    card.innerHTML = '<div class="settings-heading"><div><p class="eyebrow">Application administrative</p><h2>Paramètres</h2><p class="muted">Personnalisez l’affichage et le fonctionnement de votre espace de travail.</p></div></div>';
+    card.innerHTML = `<div class="settings-heading"><div><p class="eyebrow">${mobilePreferences ? "Poste mobile" : "Application administrative"}</p><h2>${mobilePreferences ? "Préférences" : "Paramètres"}</h2><p class="muted">Personnalisez l’affichage et le fonctionnement de votre espace de travail.</p></div></div>`;
     appendMobileInstallationQrButton(card.querySelector(".settings-heading"));
 
     // settings form
@@ -2053,7 +2060,7 @@ function renderSettings(options = {}) {
     ];
     const notificationFields = document.createElement("fieldset");
     notificationFields.className = "settings-notification-fields";
-    notificationFields.innerHTML = `<legend>Notifications sur ce poste</legend><p class="muted">Choisissez uniquement les alertes utiles à ce poste administratif. Les éléments désactivés restent conservés et peuvent être réaffichés plus tard.</p><div>${notificationChoices.map(([key, label]) => `<label class="settings-toggle"><span>${label}</span><input type="checkbox" data-notification-preference="${key}" ${(settings.notifications?.[key] ?? true) ? "checked" : ""}></label>`).join("")}</div>`;
+    notificationFields.innerHTML = `<legend>Notifications sur ce poste</legend><p class="muted">${mobilePreferences ? "Choisissez les alertes utiles sur ce mobile. Ces préférences restent sur cet appareil et ne modifient pas les droits du poste." : "Choisissez uniquement les alertes utiles à ce poste administratif. Les éléments désactivés restent conservés et peuvent être réaffichés plus tard."}</p><div>${notificationChoices.map(([key, label]) => `<label class="settings-toggle"><span>${label}</span><input type="checkbox" data-notification-preference="${key}" ${(settings.notifications?.[key] ?? true) ? "checked" : ""}></label>`).join("")}</div>`;
 
     const pcSeatsHint = document.createElement("p");
     pcSeatsHint.className = "muted settings-info";
@@ -2122,7 +2129,7 @@ function renderSettings(options = {}) {
     fields.append(maxLabel, themeLabel, densityLabel, fontLabel, langLabel, offlineLabel, motionLabel);
     form.appendChild(fields);
     form.appendChild(notificationFields);
-    if (isLocalCompanyAdministrator()) {
+    if (!mobilePreferences && isLocalCompanyAdministrator()) {
         form.appendChild(pcSeatsHint);
     }
     form.appendChild(actions);
@@ -2579,6 +2586,7 @@ function renderSupportContact(container) {
         <form class="support-request-form">
             <label>Votre message<textarea name="message" rows="10" maxlength="4000" required aria-describedby="supportMessageHint supportRequestFeedback" placeholder="Expliquez la situation rencontrée, les étapes déjà effectuées et toute information utile…"></textarea></label>
             <div class="support-request-meta"><span id="supportMessageHint">10 caractères minimum · 4 000 maximum</span><span data-support-character-count aria-live="polite">0 / 4 000</span></div>
+            ${supportAssistanceFields()}
             <div class="support-request-actions"><button type="submit" class="secondary-button">Envoyer ma demande</button></div>
             <p id="supportRequestFeedback" class="auth-message" aria-live="polite"></p>
         </form>
@@ -2602,7 +2610,7 @@ function renderSupportContact(container) {
                 method: "POST",
                 credentials: "same-origin",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ message: textarea.value })
+                body: JSON.stringify({ message: textarea.value, assistancePreference: form.elements.assistancePreference.value })
             });
             const data = await response.json().catch(() => null);
             if (!response.ok) throw new Error(data?.message || "Impossible d’envoyer votre demande au support.");
@@ -2618,6 +2626,10 @@ function renderSupportContact(container) {
         }
     });
     container.appendChild(card);
+}
+
+function supportAssistanceFields() {
+    return `<fieldset class="support-assistance-choice"><legend>Assistance souhaitée (facultatif)</legend><label>Mode d’assistance<select name="assistancePreference"><option value="">Ticket uniquement, sans demande d’assistance</option><option value="diagnostic">Diagnostic en lecture seule</option><option value="control">Prise en main sécurisée</option></select></label><p class="muted">Ce choix n’autorise aucun accès. Si le Support propose une session, un Poste Admin de votre entreprise devra l’accepter séparément. L’accès restera temporaire et révocable.</p></fieldset>`;
 }
 
 function renderMobileSupportTicket() {
@@ -2638,6 +2650,7 @@ function renderMobileSupportTicket() {
                 <label class="form-wide">Description<textarea name="message" rows="8" minlength="10" maxlength="3000" required aria-describedby="mobileSupportMessageHint mobileSupportFeedback" placeholder="Indiquez ce que vous faisiez, ce qui s’est passé et le résultat attendu…"></textarea></label>
             </div>
             <div class="support-request-meta"><span id="mobileSupportMessageHint">10 caractères minimum · n’indiquez aucun mot de passe</span><span data-support-character-count aria-live="polite">0 / 3 000</span></div>
+            ${supportAssistanceFields()}
             <details class="mobile-support-context"><summary>Informations techniques jointes</summary><dl>${Object.entries(context).map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}</dl></details>
             <div class="support-request-actions"><button type="submit" class="secondary-button">Envoyer le ticket</button></div>
             <p id="mobileSupportFeedback" class="auth-message" aria-live="polite"></p>
@@ -2661,7 +2674,7 @@ function renderMobileSupportTicket() {
                 method: "POST",
                 credentials: "same-origin",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ category: form.elements.category.value, subject: form.elements.subject.value, message: textarea.value, technicalContext: context })
+                body: JSON.stringify({ category: form.elements.category.value, subject: form.elements.subject.value, message: textarea.value, technicalContext: context, assistancePreference: form.elements.assistancePreference.value })
             });
             const data = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(data.message || "Impossible d’envoyer le ticket.");

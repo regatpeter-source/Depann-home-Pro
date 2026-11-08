@@ -26,7 +26,8 @@ test("le menu mobile range les actions existantes dans des sous-dossiers", () =>
     assert.match(mobileMenuSource, /\["Gestion", \["billingBtn", "accountingBtn", "purchasesBtn"\]\]/);
     assert.match(mobileMenuSource, /\["Ressources", \["businessSuiteBtn"\]\]/);
     assert.match(mobileMenuSource, /\["Communication", \["companyEmailBtn"\]\]/);
-    assert.match(mobileMenuSource, /\["Ressources et compte", \["libraryBtn", "settingsBtn"\]\]/);
+    assert.match(mobileMenuSource, /\["Ressources et compte", \["libraryBtn"\]\]/);
+    assert.match(mobileMenuSource, /\["Préférences", \["settingsBtn"\]\]/);
     assert.match(mobileMenuSource, /\["Aide et support", \["supportTicketBtn"\]\]/);
     assert.match(mobileMenuSource, /source\?\.click\(\)/);
     assert.match(mobileMenuSource, /quickActions\.querySelector\(`#\$\{id\}`\)/);
@@ -50,8 +51,8 @@ test("le Poste Admin Mobile affiche ses fonctions opérationnelles et le ticket 
         .filter(([, roles]) => roles.includes("mobile_admin"))
         .map(([route]) => route)
         .sort();
-    assert.deepEqual(quickAccess, ["calendar", "clients", "library", "operationsMap", "purchases", "support"]);
-    assert.deepEqual(routeAccess, [ROUTES.home, ROUTES.calendar, ROUTES.clients, ROUTES.library, ROUTES.operationsMap, ROUTES.purchases, ROUTES.support].sort());
+    assert.deepEqual(quickAccess, ["calendar", "clients", "library", "operationsMap", "purchases", "settings", "support"]);
+    assert.deepEqual(routeAccess, [ROUTES.home, ROUTES.calendar, ROUTES.clients, ROUTES.library, ROUTES.operationsMap, ROUTES.purchases, ROUTES.settings, ROUTES.support].sort());
     assert.match(navigation, /else if \(isCommercialMobile\(\)\) openCalendar\(\)/);
     assert.match(navigation, /else if \(isMobileDeviceContext\(\)\) openHome\(\)/);
     assert.match(styles, /mobile_admin"\]\.mobile-device \.search-section\{display:none;\}/);

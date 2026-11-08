@@ -524,3 +524,17 @@ body.dark-theme .partner-dialogue .partner-dialog-close{
 body.dark-theme .partner-dialogue :is(.partner-dialogue-summary strong,.partner-dialogue-links>strong,.partner-journal-filters::before,.partner-composer-files>span){
     color:var(--text);
 }
+
+body.dark-theme .partner-dialogue :is(.partner-composer-files,.partner-dialogue-document.photo,.journal-share-control){
+    border-color:var(--border);
+    background:var(--surface-alt);
+    color:var(--text);
+}
+body.dark-theme .partner-dialogue :is(.partner-composer-files:hover,.partner-composer-files:focus-within,.partner-composer-files.drag-active){
+    border-color:var(--secondary);
+    background:#16382f;
+}
+body.dark-theme .partner-dialogue :is(.partner-intervention-photo-folder>strong,.partner-composer-files>strong,.partner-dialogue-heading h3,.partner-dialogue-message strong){
+    color:var(--text);
+}
+body.dark-theme .partner-dialogue .partner-dialog-close:is(:hover,:focus-visible){background:#24344a;color:var(--text);}

@@ -67,6 +67,8 @@ test("la langue anglaise traduit le shell, les paramètres et les écrans dynami
     assert.equal(translateInterfaceText("Chercher"), "Search");
     assert.equal(translateInterfaceText("Contacter le support"), "Contact support");
     assert.equal(translateInterfaceText("Paramètres"), "Settings");
+    assert.equal(translateInterfaceText("Préférences"), "Preferences");
+    assert.equal(translateInterfaceText("Assistance souhaitée (facultatif)"), "Requested assistance (optional)");
     assert.equal(translateInterfaceText("Missions partenaires"), "Partner missions");
     assert.equal(translateInterfaceText("Chargement des missions…"), "Loading missions…");
     assert.equal(translateInterfaceText("Informations générales"), "General information");

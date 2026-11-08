@@ -1523,6 +1523,7 @@ body[data-page-mode="basic-home"] #pageTitle{
     border-radius:12px;
     padding:14px;
     color:var(--text);
+    background:var(--surface);
     font:inherit;
     font-weight:400;
     line-height:1.5;
@@ -1546,6 +1547,12 @@ body[data-page-mode="basic-home"] #pageTitle{
     display:flex;
     justify-content:flex-end;
 }
+
+.support-assistance-choice{display:grid;gap:10px;min-width:0;margin:0;padding:14px;border:1px solid var(--border);border-radius:12px;background:var(--surface-alt);}
+.support-assistance-choice legend{padding:0 5px;color:var(--primary);font-weight:800;}
+.support-assistance-choice select{width:100%;min-width:0;min-height:44px;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);font:inherit;}
+.support-assistance-choice p{margin:0;font-size:13px;line-height:1.5;}
+.support-assistance-summary{font-size:13px;color:var(--muted);}
 
 .mobile-only-action{display:none;}
 .mobile-support-ticket{max-width:900px;margin:0 auto;}
@@ -8829,6 +8836,142 @@ body:is(.desktop-device,.mobile-device).dark-theme .maplibregl-popup-close-butto
 body:is(.desktop-device,.mobile-device).dark-theme .mobile-revenue-card{border-color:#166534;background:linear-gradient(135deg,rgba(20,83,45,.28),var(--surface));}
 body:is(.desktop-device,.mobile-device).dark-theme :is(.mobile-revenue-total,.mobile-revenue-breakdown p){border-color:var(--border);background:var(--surface-alt);}
 @media(max-width:700px){.mobile-revenue-heading{align-items:stretch;flex-direction:column;}.mobile-revenue-summary{grid-template-columns:1fr;}.mobile-revenue-breakdown{grid-template-columns:1fr 1fr;}}
+
+/* Surfaces contrôlées sur PC et mobile, hors feuilles, images et signatures. */
+body.mobile-device.dark-theme .secondary-button{border:1px solid var(--border);background:var(--surface-alt);color:var(--text);}
+body.mobile-device.dark-theme .secondary-button:is(:hover,:focus-visible){border-color:var(--primary);background:#24344a;color:var(--text);}
+body:is(.desktop-device,.mobile-device).dark-theme :is(
+    .dashboard-company-switcher,.group-company-modal>section,.group-company-modal .form-heading,
+    .partner-mission-dialog>section,.template-preview-dialog>div,
+    .mobile-workspace-folder,.library-mobile-tool,.library-mobile-tool.store-tool,
+    .partner-sandbox-summary article,.partner-sandbox-message,.partner-sandbox-document,
+    .partner-sandbox-api-log article,.partner-sandbox-profile dl,.sandbox-step,
+    .partner-journal-filters .text-button,.partner-dialogue-document,.partner-dialogue-attachment-row,
+    .partner-mission-history li,.partner-dialogue-summary article,.partner-dialogue-links span,
+    .partner-dialogue-message,.partner-dialogue-readonly,.partner-api-key,
+    .wizard-progress button,.material-picker button,.material-card,.wizard-actions,.report-summary div,
+    .report-list article,.report-appointment-list article,.report-library-list article,
+    .report-media-grid article,.report-method,.report-entry-point,
+    .accounting-sandbox-simple-list li,.accounting-sandbox-timeline li,.accounting-sandbox-table th,
+    .commerce-section,.partner-mailbox-body,.partner-mailbox-attachment-disabled,
+    .professional-company-description,.creator-account-status-panel.archived,.store-match,
+    .library-section-form,.library-section-button,.calendar-client-summary,
+    .calendar-appointment-information,.calendar-billing-actions,.quitus-legal-declaration,
+    .calendar-technician-name,.calendar-overflow-button,.calendar-list-day,
+    .team-departments-field span,.data-import-steps li,.data-import-mapping-grid,
+    .data-import-summary span,.data-import-preview-table,.data-import-preview-table th,
+    .report-material-options label,.report-photo-source-dialog>div,.report-photo-preview-dialog>div,
+    .client-archived-badge,.client-archived-banner,.report-proofreading-dialog>form,
+    .report-proofreading-editor,.report-proofreading-live-preview,.report-proofreading-panel-heading,
+    .report-proofreading-list article,.report-proofreading-entry .report-photo-grid>article,
+    .report-general-editor,.report-creation-options button,.report-new-client-fields,
+    .report-editor-header,.report-editor-footer,.report-auto-summary,.report-module-empty,
+    .report-observation-card,.report-auto-summary dl div,.report-photo-grid article,.report-preview-header,
+    .mobile-user-sections span,.mobile-dashboard-sections span,.active-company-badge,.desktop-workspace-mode,
+    .password-toggle,.auth-validation-pending,.group-panel,.partner-sandbox-actions,
+    .partner-sandbox-document-icon,.partner-sandbox-api-log span,.partner-visibility-toggle,
+    .journal-share-control,.team-role-badge.is-mobile-admin,.sandbox-receiver-button,
+    .partner-mission-full-detail>header,.partner-dialogue-attachments a,.partner-mission-meta span,
+    .partner-mission-status,.partner-directory-toggle,.partner-connection-status,.wizard-step-title span,
+    .report-lock-banner,.report-tabs .secondary-button,.report-status,.accounting-tabs .secondary-button,
+    .connector-status,.combination-table,.combination-table tbody tr,.partner-mission-steps li,
+    .partner-mission-selection,.partner-mission-choice,.directory-partnership,.directory-group,
+    .professional-directory-specialties span,.creator-totp-secret,.company-two-factor-enrollment code,
+    .creator-subscription-badge,.creator-account-status-note,.creator-state,.intervention-search-status,
+    .client-files-zone,.intervention-selected-photo-preview,.technician-calendar-view-switcher,
+    .calendar-time-slot-preview,.calendar-technician-filter,.billing-default-option,
+    .team-company-badge,.team-company-group,.device-management-heading,.data-import-analysis,
+    .report-photo-source-actions label,.report-proofreading-help,.report-pdf-layout-controls,
+    .report-editor-status,.report-editor-lock,.report-editor-corrections,.report-module-nav button span,
+    .report-photo-add,.report-add-observation
+){
+    border-color:var(--border);
+    background:var(--surface-alt);
+    color:var(--text);
+}
+
+body:is(.desktop-device,.mobile-device).dark-theme :is(
+    .dashboard-company-switcher,.group-company-modal,.partner-sandbox-summary,
+    .partner-sandbox-message,.partner-sandbox-document,.partner-dialogue-summary,
+    .partner-dialogue-message,.material-card,.report-summary,.report-method,
+    .report-entry-point,.quitus-legal-declaration,.calendar-client-summary,
+    .calendar-appointment-information,.report-proofreading-dialog,.report-auto-summary
+) :is(h2,h3,h4,strong,label,dt,summary){color:var(--text);}
+body:is(.desktop-device,.mobile-device).dark-theme :is(
+    .partner-sandbox-summary,.partner-sandbox-message,.partner-sandbox-document,
+    .report-summary,.report-method,.report-entry-point,.report-proofreading-dialog,
+    .report-auto-summary
+) :is(p,small,dd){color:var(--muted);}
+
+body:is(.desktop-device,.mobile-device).dark-theme :is(
+    .sandbox-warning,.sandbox-warning-banner,.partner-sandbox-note,.partner-sandbox-connection,
+    .partner-sandbox-directory,.professional-directory-sandbox
+){border-color:#6b4e96;background:#302744;color:#ddd6fe;}
+body:is(.desktop-device,.mobile-device).dark-theme :is(
+    .platform-announcement,.partner-requests,.partner-mission-meta .priority,
+    .partner-dialogue-message.issue,.wizard-progress button.skipped,
+    .report-lock-banner.readonly,.report-editor-lock.readonly,.quitus-status,
+    .client-deductible-highlight,.deductible-expected,.report-proofreading-state.required,
+    .creator-subscription-summary .attention,.creator-subscription-badge.sending,
+    .partner-mission-status.pending_validation,.partner-connection-status.pending,
+    .directory-availability.temporarily_unavailable,.directory-partnership.pending,
+    .creator-subscription-badge.pending,.team-state-badge.is-pending,
+    .report-status.in_correction,.report-editor-status.in_correction,
+    .calendar-event.is-paused .calendar-event-status,.refresh-button.has-notifications
+){border-color:#92400e;background:#432c1c;color:#fde68a;}
+body:is(.desktop-device,.mobile-device).dark-theme :is(
+    .report-lock-banner.editable,.report-editor-lock.editable,.sandbox-step.done,
+    .calendar-quitus .quitus-approval,.creator-account-status-panel,
+    .report-proofreading-state.confirmed,.partner-connection-status.connected,
+    .partner-mission-status.scheduled,.partner-mission-status.closed,.connector-status.enabled,
+    .directory-availability.available,.directory-partnership.connected,
+    .creator-subscription-badge.accepted,.creator-subscription-badge.contacted,
+    .intervention-search-status.status-completed,.report-status.validated,.report-editor-status.validated
+){border-color:#166534;background:#16382f;color:#bbf7d0;}
+body:is(.desktop-device,.mobile-device).dark-theme :is(
+    .report-lock-banner.validated,.report-editor-lock.validated
+){border-color:var(--border);background:var(--surface-alt);color:var(--muted);}
+body:is(.desktop-device,.mobile-device).dark-theme :is(
+    .partner-mission-status.rejected,.partner-mission-status.cancelled,
+    .partner-connection-status.refused,.partner-connection-status.disconnected,
+    .connector-status.disabled,.connector-status.failed,.directory-availability.unavailable,
+    .creator-account-status-panel.suspended,.creator-state.suspended,
+    .creator-subscription-badge.past_due,.creator-subscription-badge.refused,
+    .intervention-search-status.status-cancelled,.client-intervention-pdf,.intervention-pdf-preview,
+    .device-management-danger,.data-import-errors,.calendar-time-slot-preview.conflict
+){border-color:#7f1d1d;background:#432427;color:#fecaca;}
+body:is(.desktop-device,.mobile-device).dark-theme .intervention-search-status.status-in_progress{background:#432c1c;color:#fed7aa;}
+body:is(.desktop-device,.mobile-device).dark-theme .partner-journal-photo{background:var(--surface-alt)!important;}
+
+body:is(.desktop-device,.mobile-device).dark-theme .mobile-workspace-folder summary span{background:#24344a;color:var(--primary);}
+body:is(.desktop-device,.mobile-device).dark-theme .mobile-workspace-folder button{border:1px solid var(--border);background:#24344a;color:var(--text);}
+body:is(.desktop-device,.mobile-device).dark-theme :is(.mobile-workspace-folder button:active,.mobile-workspace-folder button:focus-visible){border-color:var(--secondary);background:#16382f;color:#bbf7d0;}
+body:is(.desktop-device,.mobile-device).dark-theme :is(.wizard-progress button.active,.library-section-button.selected){border-color:var(--secondary);background:#0f7650;color:#fff;}
+body:is(.desktop-device,.mobile-device).dark-theme :is(.material-picker button:hover,.report-creation-options button:hover,.library-section-button:hover){border-color:var(--primary);background:#24344a;color:var(--text);}
+body:is(.desktop-device,.mobile-device).dark-theme :is(.calendar-legend span,.calendar-status-legend span,.calendar-grid .calendar-technician-name){background:var(--surface-alt);color:var(--text);}
+body:is(.desktop-device,.mobile-device).dark-theme .calendar-status-legend i{background:var(--surface-alt);}
+body:is(.desktop-device,.mobile-device).dark-theme .calendar-event.color-blue{background:#172c46;color:#bfdbfe;}
+body:is(.desktop-device,.mobile-device).dark-theme .calendar-event.color-green{background:#16382f;color:#a7f3d0;}
+body:is(.desktop-device,.mobile-device).dark-theme .calendar-event.color-orange{background:#432c1c;color:#fed7aa;}
+body:is(.desktop-device,.mobile-device).dark-theme .calendar-event.color-red{background:#432427;color:#fecaca;}
+body:is(.desktop-device,.mobile-device).dark-theme .calendar-event.color-purple{background:#302744;color:#ddd6fe;}
+body:is(.desktop-device,.mobile-device).dark-theme .calendar-event.color-gray{background:#293548;color:#e2e8f0;}
+body:is(.desktop-device,.mobile-device).dark-theme .calendar-event.status-paused{background:#432c1c!important;color:#fde68a;}
+body:is(.desktop-device,.mobile-device).dark-theme .calendar-event.status-cancelled{background:#293548!important;color:#cbd5e1!important;}
+body:is(.desktop-device,.mobile-device).dark-theme .calendar-event :is(strong,small,.calendar-event-identity,.calendar-event-context){color:inherit;}
+body:is(.desktop-device,.mobile-device).dark-theme :is(.report-tabs .secondary-button.active,.accounting-tabs .secondary-button.active,.calendar-view-switcher .secondary-button.active,.partner-mission-steps li.active,.calendar-mobile-agenda-day.today .calendar-mobile-date){border-color:var(--secondary);background:#0f7650;color:#fff;}
+body:is(.desktop-device,.mobile-device).dark-theme :is(.calendar-mobile-day-heading,.calendar-mobile-date,.calendar-mobile-add),
+body:is(.desktop-device,.mobile-device).dark-theme .calendar-mobile-agenda-week .calendar-mobile-agenda-day.is-empty .calendar-mobile-day-heading{border-color:var(--border);background:var(--surface-alt);color:var(--text);}
+body:is(.desktop-device,.mobile-device).dark-theme .calendar-day.today{border-color:var(--secondary);background:#16382f;}
+body:is(.desktop-device,.mobile-device).dark-theme :is(.report-status.submitted,.report-editor-status.submitted,.partner-sandbox-document-icon){background:#172c46;color:#bfdbfe;}
+body:is(.desktop-device,.mobile-device).dark-theme .partner-sandbox-document.report .partner-sandbox-document-icon{background:#16382f;color:#bbf7d0;}
+body:is(.desktop-device,.mobile-device).dark-theme .partner-sandbox-document.invoice .partner-sandbox-document-icon{background:#432c1c;color:#fed7aa;}
+body:is(.desktop-device,.mobile-device).dark-theme .report-module-nav button.used span{background:#16382f;color:#bbf7d0;}
+body:is(.desktop-device,.mobile-device).dark-theme :is(.report-proofreading-pdf-pages,.report-preview-pages){background:#0b1220;}
+body:is(.desktop-device,.mobile-device).dark-theme :is(.group-panel,.partner-sandbox-actions,.partner-mission-full-detail>header,.intervention-selected-photo-preview,.device-management-heading) :is(h2,h3,h4,strong){color:var(--text);}
+body:is(.desktop-device,.mobile-device).dark-theme :is(.auth-validation-pending,.creator-account-status-note) :is(strong,p){color:var(--text);}
+body:is(.desktop-device,.mobile-device).dark-theme :is(.calendar-toolbar-actions [data-calendar-action="new"],.calendar-toolbar-actions [data-calendar-action="new-task"]){background:#0f7650;color:#fff;}
+body:is(.desktop-device,.mobile-device).dark-theme .creator-account-status-panel.archived{border-color:var(--border);background:var(--surface-alt);color:var(--muted);}
 
 .offline-tools{margin:8px 12px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--text);}
 .offline-tools summary{cursor:pointer;font-weight:600;}

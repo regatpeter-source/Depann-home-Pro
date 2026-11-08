@@ -6,6 +6,7 @@ import { createNotification } from "./collaboration.js";
 const MAX_SUPPORT_MESSAGE_LENGTH = 4000;
 const SUPPORT_STATUSES = new Set(["new", "under_review", "answered", "closed"]);
 const SUPPORT_CATEGORIES = new Set(["Dysfonctionnement", "Synchronisation / hors ligne", "Planning / intervention", "Client", "Devis / facture", "Connexion / accès", "Autre"]);
+const SUPPORT_ASSISTANCE_PREFERENCES = new Set(["", "diagnostic", "control"]);
 
 export async function initializeSupport() {
     await getPool().query(`
@@ -19,6 +20,7 @@ export async function initializeSupport() {
             category VARCHAR(40) NOT NULL DEFAULT '',
             subject VARCHAR(160) NOT NULL DEFAULT '',
             technical_context JSONB NOT NULL DEFAULT '{}'::jsonb,
+            assistance_preference VARCHAR(20) NOT NULL DEFAULT '' CHECK (assistance_preference IN ('','diagnostic','control')),
             message VARCHAR(4000) NOT NULL,
             status VARCHAR(20) NOT NULL DEFAULT 'new' CHECK (status IN ('new','under_review','answered','closed')),
             creator_note VARCHAR(2000) NOT NULL DEFAULT '',
@@ -29,6 +31,7 @@ export async function initializeSupport() {
         )
     `);
     await getPool().query("ALTER TABLE depannhome_support_requests ADD COLUMN IF NOT EXISTS category VARCHAR(40) NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS subject VARCHAR(160) NOT NULL DEFAULT '', ADD COLUMN IF NOT EXISTS technical_context JSONB NOT NULL DEFAULT '{}'::jsonb");
+    await getPool().query("ALTER TABLE depannhome_support_requests ADD COLUMN IF NOT EXISTS assistance_preference VARCHAR(20) NOT NULL DEFAULT '' CHECK (assistance_preference IN ('','diagnostic','control'))");
     await getPool().query("CREATE INDEX IF NOT EXISTS depannhome_support_requests_status_created_idx ON depannhome_support_requests(status,created_at DESC)");
 }
 
@@ -38,6 +41,10 @@ export function registerSupportRoutes(app, requireAuthentication, requireCreator
         const category = cleanText(request.body?.category, 40);
         const subject = cleanText(request.body?.subject, 160);
         const technicalContext = cleanTechnicalContext(request.body?.technicalContext);
+        const assistancePreference = request.body?.assistancePreference === undefined ? "" : request.body.assistancePreference;
+        if (!SUPPORT_ASSISTANCE_PREFERENCES.has(assistancePreference)) {
+            return response.status(400).json({ message: "Choisissez un mode d’assistance valide ou un ticket sans assistance." });
+        }
         if ((category || subject || Object.keys(technicalContext).length) && (!SUPPORT_CATEGORIES.has(category) || subject.length < 3)) {
             return response.status(400).json({ message: "Choisissez une catégorie et indiquez un objet d’au moins 3 caractères." });
         }
@@ -48,15 +55,16 @@ export function registerSupportRoutes(app, requireAuthentication, requireCreator
         const senderName = cleanText(request.user?.fullName, 100);
         const senderEmail = cleanText(request.user?.email, 160);
         const senderUsername = cleanText(request.user?.username, 32);
-        const { rows } = await getPool().query(`INSERT INTO depannhome_support_requests(owner_id,requested_by,sender_name,sender_email,sender_username,category,subject,technical_context,message) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9) RETURNING id`, [request.user.accountOwnerId, request.user.sub, senderName, senderEmail, senderUsername, category, subject, JSON.stringify(technicalContext), message]);
-        await notifyCreators(rows[0].id, request.user.accountOwnerId, senderName || senderUsername, subject || message);
-        const emailMessage = [category && `Catégorie : ${category}`, subject && `Objet : ${subject}`, message, Object.keys(technicalContext).length && `Contexte technique :\n${Object.entries(technicalContext).map(([key, value]) => `${key} : ${value}`).join("\n")}`].filter(Boolean).join("\n\n");
+        const { rows } = await getPool().query(`INSERT INTO depannhome_support_requests(owner_id,requested_by,sender_name,sender_email,sender_username,category,subject,technical_context,message,assistance_preference) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10) RETURNING id`, [request.user.accountOwnerId, request.user.sub, senderName, senderEmail, senderUsername, category, subject, JSON.stringify(technicalContext), message, assistancePreference]);
+        await notifyCreators(rows[0].id, request.user.accountOwnerId, senderName || senderUsername, subject || message, assistancePreference);
+        const assistanceLabel = assistancePreference === "control" ? "Prise en main sécurisée" : "Diagnostic en lecture seule";
+        const emailMessage = [category && `Catégorie : ${category}`, subject && `Objet : ${subject}`, message, assistancePreference && `Assistance souhaitée : ${assistanceLabel}. Ce souhait ne vaut pas autorisation ; une acceptation séparée par un Poste Admin reste nécessaire.`, Object.keys(technicalContext).length && `Contexte technique :\n${Object.entries(technicalContext).map(([key, value]) => `${key} : ${value}`).join("\n")}`].filter(Boolean).join("\n\n");
         try { await sendSupportRequestEmail({ senderName, senderEmail, senderUsername, message: emailMessage }); } catch (error) { console.warn("[support-request] email unavailable", { requestId: rows[0].id, code: error.code || "EMAIL_ERROR" }); }
         response.status(202).json({ message: "Votre message est enregistré et transmis au Support." });
     }));
 
     app.get("/api/creator/support-requests", requireAuthentication, requireCreator, asyncHandler(async (request, response) => {
-        const { rows } = await getPool().query(`SELECT support.id,support.owner_id AS "ownerId",COALESCE(NULLIF(profile.company_name,''),NULLIF(owner.company_name,''),owner.full_name,owner.username) AS "companyName",support.sender_name AS "senderName",support.sender_email AS "senderEmail",support.sender_username AS "senderUsername",support.category,support.subject,support.technical_context AS "technicalContext",support.message,support.status,support.creator_note AS "creatorNote",support.created_at AS "createdAt",support.updated_at AS "updatedAt" FROM depannhome_support_requests support JOIN depannhome_users owner ON owner.id=support.owner_id LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id ORDER BY CASE support.status WHEN 'new' THEN 0 WHEN 'under_review' THEN 1 ELSE 2 END,support.created_at DESC LIMIT 200`);
+        const { rows } = await getPool().query(`SELECT support.id,support.owner_id AS "ownerId",COALESCE(NULLIF(profile.company_name,''),NULLIF(owner.company_name,''),owner.full_name,owner.username) AS "companyName",support.sender_name AS "senderName",support.sender_email AS "senderEmail",support.sender_username AS "senderUsername",support.category,support.subject,support.technical_context AS "technicalContext",support.assistance_preference AS "assistancePreference",support.message,support.status,support.creator_note AS "creatorNote",support.created_at AS "createdAt",support.updated_at AS "updatedAt" FROM depannhome_support_requests support JOIN depannhome_users owner ON owner.id=support.owner_id LEFT JOIN depannhome_billing_profiles profile ON profile.owner_id=owner.id ORDER BY CASE support.status WHEN 'new' THEN 0 WHEN 'under_review' THEN 1 ELSE 2 END,support.created_at DESC LIMIT 200`);
         response.json({ requests: rows });
     }));
 
@@ -72,10 +80,11 @@ export function registerSupportRoutes(app, requireAuthentication, requireCreator
     }));
 }
 
-async function notifyCreators(requestId, ownerId, sender, message) {
+async function notifyCreators(requestId, ownerId, sender, message, assistancePreference) {
     const { rows } = await getPool().query("SELECT id,account_owner_id AS \"ownerId\",username FROM depannhome_users WHERE is_active=TRUE");
     const creators = rows.filter(account => isCreatorUsername(account.username));
-    await Promise.all(creators.map(account => createNotification(account.ownerId || account.id, account.id, "support_request_received", { entityType: "support_request", entityId: String(requestId) }, "Nouvelle demande Support", `${sender || "Entreprise"} · ${cleanText(message, 180)}`, { requestId: String(requestId), companyOwnerId: String(ownerId) })));
+    const assistanceLabel = assistancePreference === "control" ? " · Prise en main souhaitée" : assistancePreference === "diagnostic" ? " · Diagnostic souhaité" : "";
+    await Promise.all(creators.map(account => createNotification(account.ownerId || account.id, account.id, "support_request_received", { entityType: "support_request", entityId: String(requestId) }, "Nouvelle demande Support", `${sender || "Entreprise"}${assistanceLabel} · ${cleanText(message, 180)}`, { requestId: String(requestId), companyOwnerId: String(ownerId), assistancePreference })));
 }
 
 function positiveId(value) { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : 0; }

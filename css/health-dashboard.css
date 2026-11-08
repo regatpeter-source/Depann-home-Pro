@@ -1,4 +1,13 @@
 .creator-health-dashboard{display:grid;gap:18px}
+body.dark-theme :is(.health-details div,.health-incident,.health-table,.health-table th,.health-deployment-list article,.health-diagnostic-card){
+	border-color:var(--border);
+	background:var(--surface-alt);
+	color:var(--text);
+}
+body.dark-theme :is(.health-card,.health-incident,.health-deployment-list,.health-details,.health-hero) :is(p,small,dt,span){color:var(--muted)}
+body.dark-theme .health-empty-success{border-color:#166534;background:#16382f;color:#bbf7d0}
+body.dark-theme :is(.health-resolved,.health-test-passed){color:#86efac!important}
+body.dark-theme :is(.health-cell-alert,.health-test-failed){color:#fca5a5}
 body.dark-theme .health-hero,
 body.dark-theme .health-alert-summary article,
 body.dark-theme .health-card,

@@ -100,7 +100,7 @@ export const MENU_ACCESS = Object.freeze({
         companyEmail: COMPANY_EMAIL_USERS,
         partnerSandbox: ADMINISTRATORS,
         support: SUPPORT_USERS,
-        settings: OPERATIONAL_PC
+        settings: TERRAIN
     }),
     navigation: Object.freeze({
         [ROUTES.home]: OPERATIONAL_PC.concat("mobile_admin", "team_lead", "technician"),
@@ -120,6 +120,6 @@ export const MENU_ACCESS = Object.freeze({
         [ROUTES.operationsMap]: OPERATIONS_MAP_USERS,
         [ROUTES.library]: LIBRARY_USERS,
         [ROUTES.support]: SUPPORT_USERS,
-        [ROUTES.settings]: OPERATIONAL_PC
+        [ROUTES.settings]: TERRAIN
     })
 });
