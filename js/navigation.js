@@ -5,6 +5,7 @@ import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocume
 import { renderAccounting } from "./accounting.js?v=39";
 import { renderPurchases } from "./purchases.js?v=136";
 import { renderBusinessSuite } from "./business-suite.js?v=9";
+import { renderMobileInstallationQr, showMobileInstallationQr } from "./mobile-installation-qr.js?v=1";
 import { canAccessReminderDashboard, mountReminderDashboard, reminderDashboardMarkup } from "./reminder-dashboard.js?v=2";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=10";
 import { renderHistoryAndJournals } from "./history.js?v=2";
@@ -1907,6 +1908,11 @@ function getRefPhoto(ref) {
     return Array.isArray(product?.photos) && product.photos.length ? product.photos[0] : "";
 }
 
+function appendMobileInstallationQrButton(container) {
+    if (document.body.dataset.deviceType !== "desktop" || !["admin", "pc_standard", "commercial", "accountant"].includes(document.body.dataset.role)) return;
+    container.appendChild(createButton("Installer sur mobile · QR code", "secondary-button", showMobileInstallationQr));
+}
+
 function renderSettings(options = {}) {
     if (!canAccessRoute(ROUTES.settings)) {
         openHome();
@@ -1925,6 +1931,7 @@ function renderSettings(options = {}) {
     card.className = "brand-card full-card procedure-card settings-card";
 
     card.innerHTML = '<div class="settings-heading"><div><p class="eyebrow">Application administrative</p><h2>Paramètres</h2><p class="muted">Personnalisez l’affichage et le fonctionnement de votre espace de travail.</p></div></div>';
+    appendMobileInstallationQrButton(card.querySelector(".settings-heading"));
 
     // settings form
     const settings = getSettings();
@@ -2148,6 +2155,7 @@ function renderSettingsWorkspace(options = {}) {
         const internalNetworkOnly = document.body.dataset.organizationInterface === "partner" || !organizationFeatureEnabled("connectors");
         const supportAvailable = canAccessSettingsSection("support");
         hub.innerHTML = `<header class="settings-hub-heading"><div><p class="eyebrow">${internalNetworkOnly ? "Réseau et assistance" : "Configuration de l’entreprise"}</p><h2>Paramètres</h2><p class="muted">${internalNetworkOnly ? "Retrouvez le Réseau Depann’Home Pro et contactez directement le Support." : "Toutes les configurations sont regroupées ici. Le menu principal reste dédié aux opérations quotidiennes."}</p></div></header>`;
+        appendMobileInstallationQrButton(hub.querySelector(".settings-hub-heading"));
         const grid = document.createElement("div");
         grid.className = "settings-card-grid";
         const cards = [
@@ -2755,8 +2763,13 @@ async function renderTeamManagement(container) {
     formActions.appendChild(submit);
     const feedback = document.createElement("p");
     feedback.className = "muted team-feedback";
+    feedback.setAttribute("aria-live", "polite");
     form.append(formFields, formActions, feedback);
     card.appendChild(form);
+    const mobileWelcome = document.createElement("div");
+    mobileWelcome.hidden = true;
+    mobileWelcome.innerHTML = '<a href="/installer-mobile" target="_blank" rel="noopener">Ouvrir le guide d’installation Android / iPhone</a><br><span>Communiquez le mot de passe initial par un canal sécurisé distinct. L’e-mail d’accueil n’autorise pas l’appareil.</span><div data-mobile-installation-qr></div>';
+    card.appendChild(mobileWelcome);
     const membersSection = document.createElement("section");
     membersSection.className = "team-section";
     membersSection.innerHTML = '<div class="team-section-heading"><div><p class="eyebrow">Organisation</p><h3>Équipes et sections métier</h3><p class="muted">Créez des équipes propres à ce siège, puis retrouvez-les directement dans le planning.</p></div><button type="button" class="secondary-button" data-create-company-team>+ Créer une équipe</button></div>';
@@ -2972,6 +2985,31 @@ async function renderTeamManagement(container) {
                 item.innerHTML = `<div class="team-member-summary"><div class="team-member-title"><strong>${escapeHtml(member.fullName || member.username)}</strong><span class="team-role-badge ${member.role === "admin" ? "is-admin" : member.role === "mobile_admin" ? "is-mobile-admin" : member.role === "accountant" ? "is-accountant" : "is-technician"}">${memberType}</span>${teamBadges}${sectionBadges}<span class="team-state-badge ${member.isActive ? "is-active" : "is-inactive"}">${member.isActive ? "Actif" : "Désactivé"}</span></div><span class="team-member-meta">${escapeHtml(member.phone || "Téléphone non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.email || "E-mail non renseigné")}<span aria-hidden="true">·</span>${escapeHtml(member.username)}${member.role === "mobile_admin" ? " · Activation par code e-mail sur smartphone" : ""}${permissionSummary}</span></div>`;
                 const actions = document.createElement("div");
                 actions.className = "team-member-actions";
+                if (["mobile_admin", "team_lead", "technician", "commercial"].includes(member.role)) {
+                    const guide = document.createElement("a");
+                    guide.className = "secondary-button";
+                    guide.href = "/installer-mobile";
+                    guide.target = "_blank";
+                    guide.rel = "noopener";
+                    guide.textContent = "Guide mobile";
+                    const resendWelcome = createButton("Renvoyer l’e-mail mobile", "secondary-button", async () => {
+                        resendWelcome.disabled = true;
+                        try {
+                            const response = await fetch(`/api/auth/members/${encodeURIComponent(member.id)}/mobile-welcome`, { method: "POST", credentials: "same-origin" });
+                            const payload = await response.json();
+                            if (!response.ok) throw new Error(payload.message || "L’envoi de l’e-mail mobile a échoué.");
+                            feedback.textContent = payload.message;
+                            feedback.classList.remove("error");
+                        } catch (error) {
+                            feedback.textContent = error.message;
+                            feedback.classList.add("error");
+                        } finally {
+                            resendWelcome.disabled = !member.isActive || !member.email;
+                        }
+                    });
+                    resendWelcome.disabled = !member.isActive || !member.email;
+                    actions.append(guide, resendWelcome);
+                }
                 const toggle = createButton(member.isActive ? "Désactiver" : "Réactiver", "secondary-button", async () => {
                     toggle.disabled = true;
                     const response = await fetch(`/api/auth/members/${encodeURIComponent(member.id)}`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isActive: !member.isActive }) });
@@ -3151,6 +3189,12 @@ async function renderTeamManagement(container) {
             form.reset();
             updateRoleFields();
             feedback.textContent = values.role === "admin" ? "Poste Admin créé. Sa première connexion devra être activée dans la liste des appareils." : values.role === "mobile_admin" ? "Poste Admin Mobile créé. À sa première connexion smartphone, autorisez l’appareil puis envoyez le code e-mail." : values.role === "commercial" ? "Commercial / Chargé d’affaires créé. Le même compte pourra être activé sur PC et mobile." : values.role === "pc_standard" ? "Poste administratif créé." : values.role === "team_lead" ? "Chef d’équipe créé." : "Technicien créé.";
+            mobileWelcome.hidden = !payload.mobileOnboarding;
+            feedback.classList.toggle("error", payload.mobileOnboarding?.emailSent === false);
+            if (payload.mobileOnboarding) feedback.textContent += ` ${payload.mobileOnboarding.message} Le guide d’installation est disponible ci-dessous.`;
+            if (payload.mobileOnboarding && document.body.dataset.deviceType === "desktop") {
+                await renderMobileInstallationQr(mobileWelcome.querySelector("[data-mobile-installation-qr]"));
+            }
             await load();
         } catch (error) { feedback.textContent = error.message; }
         finally { submit.disabled = false; }

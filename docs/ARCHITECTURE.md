@@ -10,6 +10,22 @@ Le Créateur choisit et peut modifier à tout moment le type d’interface (`par
 
 La migration est additive : au démarrage, chaque compte propriétaire historique reçoit une organisation Standard. `depannhome_organization_audit` trace toute création ou modification d’interface, de secteur ou de licence avec son auteur ; la Console Créateur affiche cet historique. Les badges de réseau sont calculés sans dupliquer les comptes : 🟢 Entreprise Depann’Home Pro, 🔵 Partenaire et 🟣 Groupe.
 
+## Accueil des nouveaux postes mobiles
+
+Après validation et commit de la création d’un Technicien, Chef d’équipe, Poste Admin Mobile ou Commercial (compte PC/mobile), le serveur envoie automatiquement un e-mail d’accueil via Brevo SMTP. Il contient l’identifiant et les liens vers `/installer-mobile` et `/connexion`, mais aucun mot de passe, jeton de connexion ou code d’autorisation. Le mot de passe initial doit être communiqué séparément par un canal sécurisé. La procédure habituelle d’autorisation de l’appareil et de validation par code reste obligatoire.
+
+Le guide public `/installer-mobile` présente les étapes Chrome/Android et Safari/iPhone/iPad. Sur un navigateur proposant l’installation PWA, un bouton permet de demander son installation, uniquement après une action de l’utilisateur. Aucun APK n’est distribué. Le guide est également accessible depuis la confirmation de création et la liste des accès.
+
+Depuis un PC, un QR code apparaît après la création d’un accès mobile, même si l’envoi SMTP échoue. Tous les rôles PC autorisés disposent aussi du bouton **Installer sur mobile · QR code** dans les Paramètres. `GET /api/auth/mobile-installation` est limité aux sessions PC authentifiées et génère le PNG localement avec la dépendance `qrcode` existante, indépendamment de SMTP. Le QR contient uniquement l’adresse publique du guide, construite par le même mécanisme que les e-mails : aucun identifiant personnel, mot de passe, code d’activation ou jeton. Une erreur de configuration ou de génération est affichée avec une possibilité de réessayer.
+
+L’e-mail reste obligatoire lors de la création des accès mobiles : le QR est un moyen d’installation supplémentaire, pas une alternative à la validation de l’appareil.
+
+Le guide n’amorce pas le service worker avant connexion, car son précache contient des ressources protégées. La préparation hors ligne reste effectuée par l’application après authentification. Si le navigateur ne propose pas encore l’installation, le guide invite à ouvrir l’application et à terminer l’autorisation de l’appareil avant de réessayer.
+
+L’envoi nécessite les variables `BREVO_SMTP_*` existantes et `PUBLIC_BASE_URL` (ou `RENDER_EXTERNAL_URL`) avec une adresse HTTPS de confiance, sans identifiants intégrés. L’hôte fourni par une requête n’est jamais utilisé dans cet e-mail. HTTP n’est accepté que sur une adresse de boucle locale hors production.
+
+Une erreur SMTP ou de configuration ne supprime pas le compte créé : l’API retourne `201` avec `mobileOnboarding.emailSent=false`, l’interface affiche l’erreur et conserve le lien du guide. Un administrateur peut réessayer via `POST /api/auth/members/:memberId/mobile-welcome`, limité aux accès mobiles actifs de son entreprise. L’acceptation par SMTP n’est pas une preuve de réception dans la boîte du destinataire. Il n’existe pas de file de relance automatique persistante pour ces e-mails.
+
 ## Comptabilité, facturation électronique & PDP et aides
 
 Le module `server/accounting.js` reste indépendant de la facturation historique : ses tables, routes et connecteurs ne modifient pas les flux métier existants. Chaque requête est filtrée avec l’`owner_id` dérivé de la session afin de garantir l’isolation des entreprises.
@@ -81,6 +97,28 @@ Le formulaire de planification intègre une carte contextuelle centrée sur l’
 Le partage mobile est explicitement activé et arrêté par l’utilisateur. Seule la dernière position est stockée : aucune table de trajet ou d’historique n’existe. L’arrêt supprime immédiatement la position ; une position est considérée en direct pendant deux minutes et supprimée après douze heures. Les techniciens ne voient que leur propre position et leurs interventions autorisées, tandis que les rôles de pilotage voient l’équipe de leur entreprise.
 
 La PWA utilise `navigator.geolocation.watchPosition()` et ne prétend pas assurer un suivi lorsque le navigateur suspend l’application. Un véritable suivi écran éteint ou application fermée nécessite une application native ou un conteneur natif doté d’un service Android au premier plan et des autorisations de localisation en arrière-plan iOS, avec consentement et information adaptés.
+
+### Faisabilité du suivi en arrière-plan — étude, sans activation
+
+| Cas | Android natif | iOS natif |
+| --- | --- | --- |
+| Application quittée vers l’accueil / écran éteint | Service de premier plan de type `location`, démarré pendant une action visible, avec notification persistante et autorisations appropriées. Les restrictions de batterie des constructeurs restent à tester. | Core Location, capacité Background Modes / Location updates et session d’activité en arrière-plan. Choisir l’autorisation minimale adaptée (`When In Use` ou `Always`) ; ne pas demander systématiquement `Always`. |
+| Processus arrêté par le système | Reprise à concevoir selon les règles Android ; aucun service ni envoi continu ne doit être annoncé comme garanti. | Certaines API permettent une reprise par le système ; recréer les sessions de localisation lors de la reprise autorisée. |
+| Arrêt forcé par l’utilisateur, permissions retirées, téléphone éteint | Suivi interrompu ; ne pas contourner l’arrêt volontaire. | Suivi non garanti ou interrompu ; ne pas promettre de relance après fermeture forcée. |
+
+Une PWA installée, un service worker, des notifications push ou un simple conteneur WebView ne suffisent pas : le collecteur doit être natif. Un conteneur natif réutilisant l’interface web est une piste, à valider par un prototype sur appareils physiques avant de choisir le framework ou de publier une application. Le dépôt ne contient pas encore de projet Android/iOS ni de collecteur natif.
+
+Le futur périmètre devrait conserver la dernière position uniquement, sans trajet, avec démarrage volontaire pendant le service, arrêt et pauses explicites, expiration d’une session de partage, suppression à l’arrêt, et refus des transmissions après déconnexion ou révocation d’appareil. L’API de positions et ses contrôles entreprise/utilisateur peuvent être réutilisés, mais l’authentification du collecteur natif, le stockage sécurisé des accès, l’expiration du partage côté serveur et la gestion d’une dernière position hors connexion doivent être conçus et testés. Ne pas rejouer de positions anciennes après un arrêt du partage.
+
+Avant déploiement : justifier la finalité professionnelle et la proportionnalité, informer les personnes, limiter les accès, interdire la collecte hors travail (pauses comprises), vérifier la base légale avec le responsable protection des données, les obligations de consultation et les politiques Google Play/App Store. L’autorisation du téléphone ne constitue pas à elle seule une base légale pour suivre un salarié.
+
+Recette indispensable : passage à l’accueil, écran verrouillé, économie d’énergie, perte/reprise réseau, arrêt du partage, retrait des permissions, révocation d’appareil, redémarrage et arrêt forcé. Mesurer la fraîcheur des positions, la consommation de batterie et l’absence de collecte hors service ; conserver un affichage explicite de la dernière position quand le suivi est suspendu. Aucun de ces essais natifs n’a été réalisé.
+
+Sources officielles consultées pour cette étude :
+- [Android — localisation en arrière-plan](https://developer.android.com/develop/sensors-and-location/location/background)
+- [Android — types de services de premier plan](https://developer.android.com/develop/background-work/services/fgs/service-types#location)
+- [Apple — mises à jour Core Location en arrière-plan](https://developer.apple.com/documentation/corelocation/handling-location-updates-in-the-background)
+- [CNIL — géolocalisation des véhicules des salariés](https://www.cnil.fr/fr/la-geolocalisation-des-vehicules-des-salaries) : principes à examiner pour le suivi professionnel sur téléphone ; cette fiche n’est pas une validation juridique du dispositif.
 
 ## Structure
 

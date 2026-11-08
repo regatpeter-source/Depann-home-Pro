@@ -16,6 +16,48 @@ export async function sendDeviceVerificationCode({ recipient, name, code }) {
     });
 }
 
+export function mobileApplicationLinks() {
+    let base;
+    try {
+        base = new URL(String(process.env.PUBLIC_BASE_URL || process.env.RENDER_EXTERNAL_URL || ""));
+    } catch {
+        const error = new Error("Configurez PUBLIC_BASE_URL avec l’adresse publique de l’application pour partager le guide mobile.");
+        error.code = "PUBLIC_BASE_URL_INVALID";
+        error.status = 503;
+        throw error;
+    }
+    const localDevelopment = process.env.NODE_ENV !== "production" && ["localhost", "127.0.0.1", "[::1]"].includes(base.hostname);
+    if (base.username || base.password || (base.protocol !== "https:" && !(localDevelopment && base.protocol === "http:"))) {
+        const error = new Error("L’adresse publique de l’application doit utiliser HTTPS, sans identifiants intégrés.");
+        error.code = "PUBLIC_BASE_URL_INVALID";
+        error.status = 503;
+        throw error;
+    }
+    const installationUrl = new URL("/installer-mobile", base).href;
+    const loginUrl = new URL("/connexion", base).href;
+    return { installationUrl, loginUrl };
+}
+
+export function buildMobileWelcomeEmail({ recipient, name, username }) {
+    const { installationUrl, loginUrl } = mobileApplicationLinks();
+    return {
+        recipient,
+        subject: "Votre accès mobile Depann'Home Pro",
+        text: `Bonjour ${name || ""},\n\nVotre accès Depann'Home Pro a été créé.\nIdentifiant : ${username}\n\nInstaller l’application sur Android ou iPhone : ${installationUrl}\nSe connecter : ${loginUrl}\n\nOuvrez le guide sur votre téléphone dans Chrome (Android) ou Safari (iPhone), puis confirmez l’ajout à l’écran d’accueil.\nVotre administrateur doit vous communiquer le mot de passe initial par un canal sécurisé distinct. Aucun mot de passe n’est envoyé dans cet e-mail.\nÀ la première connexion, l’entreprise doit autoriser votre appareil ; confirmez ensuite le code reçu par e-mail lorsque demandé.\nCe lien ne valide pas votre appareil et ne vous connecte pas automatiquement.\n`,
+        html: `<p>Bonjour ${escapeHtml(name || "")},</p><p>Votre accès Depann'Home Pro a été créé.<br><strong>Identifiant :</strong> ${escapeHtml(username)}</p><p><a href="${escapeHtml(installationUrl)}">Installer l’application sur Android ou iPhone</a></p><p><a href="${escapeHtml(loginUrl)}">Se connecter</a></p><p>Ouvrez le guide sur votre téléphone dans Chrome (Android) ou Safari (iPhone), puis confirmez l’ajout à l’écran d’accueil.</p><p>Votre administrateur doit vous communiquer le mot de passe initial par un canal sécurisé distinct. Aucun mot de passe n’est envoyé dans cet e-mail.</p><p>À la première connexion, l’entreprise doit autoriser votre appareil ; confirmez ensuite le code reçu par e-mail lorsque demandé. Ce lien ne valide pas votre appareil et ne vous connecte pas automatiquement.</p>`
+    };
+}
+
+export async function sendMobileWelcomeEmail(values) {
+    const result = await sendEmail(buildMobileWelcomeEmail(values));
+    if (!result.accepted?.length) {
+        const error = new Error("Le service d’envoi a refusé l’e-mail d’accueil mobile.");
+        error.code = "SMTP_RECIPIENT_REJECTED";
+        throw error;
+    }
+    return result;
+}
+
 export async function sendDocumentEmail({ recipient, recipientName, documentLabel, attachment }) {
     const greeting = recipientName ? `Bonjour ${recipientName},` : "Bonjour,";
     return sendEmail({

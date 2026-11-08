@@ -325,6 +325,9 @@ app.get("/logiciel-gestion-interventions-terrain", (request, response) => {
 app.get("/application-mobile-techniciens", (request, response) => {
 	response.sendFile(path.join(rootDirectory, "public", "application-mobile-techniciens.html"), { headers: { "Cache-Control": "public, max-age=3600" } });
 });
+app.get("/installer-mobile", (request, response) => {
+	response.sendFile(path.join(rootDirectory, "public", "mobile-installation.html"), { headers: { "Cache-Control": "no-store" } });
+});
 app.get("/logiciel-facturation-electronique-artisans", (request, response) => {
 	response.sendFile(path.join(rootDirectory, "public", "logiciel-facturation-electronique-artisans.html"), { headers: { "Cache-Control": "public, max-age=3600" } });
 });

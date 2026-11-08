@@ -5,7 +5,7 @@ import * as OTPAuth from "otpauth";
 import QRCode from "qrcode";
 import { recordSecurityEvent } from "./security-hardening.js";
 import { createUser, findUserById, findUserByUsername, getPool } from "./database.js";
-import { sendDeviceVerificationCode } from "./email.js";
+import { mobileApplicationLinks, sendDeviceVerificationCode, sendMobileWelcomeEmail } from "./email.js";
 import { releaseLocksForUser } from "./collaboration.js";
 import { resolveCompanyName, resolveGroupCompany } from "./group-context.js";
 import { getOrganization } from "./organizations.js";
@@ -29,6 +29,7 @@ const STANDARD_PC_ROLE = "pc_standard";
 const COMMERCIAL_ROLE = "commercial";
 const TEAM_LEAD_ROLE = "team_lead";
 const MOBILE_CALENDAR_ROLES = new Set([MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"]);
+const MOBILE_ONBOARDING_ROLES = new Set([...MOBILE_CALENDAR_ROLES, COMMERCIAL_ROLE]);
 const PC_SESSION_ROLES = new Set(["admin", STANDARD_PC_ROLE, COMMERCIAL_ROLE, "accountant"]);
 const WORKSTATION_TOTP_ROLES = new Set(["admin", STANDARD_PC_ROLE, COMMERCIAL_ROLE]);
 const CREATABLE_MEMBER_ROLES = new Set(["admin", STANDARD_PC_ROLE, COMMERCIAL_ROLE, MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"]);
@@ -69,6 +70,15 @@ export async function mobileAdministratorSeatError(ownerId, excludedDeviceId = "
 }
 
 export function registerAuthRoutes(app) {
+    app.get("/api/auth/mobile-installation", requireAuthentication, asyncHandler(async (request, response) => {
+        if (request.user.deviceType !== "desktop" || !PC_SESSION_ROLES.has(request.user.role)) {
+            return response.status(403).json({ message: "Le QR code d’installation est accessible depuis un poste PC." });
+        }
+        const { installationUrl } = mobileApplicationLinks();
+        const qrCodeDataUrl = await QRCode.toDataURL(installationUrl, { width: 260, margin: 4, errorCorrectionLevel: "M" });
+        response.set("Cache-Control", "no-store").json({ installationUrl, qrCodeDataUrl });
+    }));
+
     app.get("/api/auth/session", asyncHandler(async (request, response) => {
         const user = request.user;
         if (!user) {
@@ -446,6 +456,7 @@ export function registerAuthRoutes(app) {
         if (seatError) return response.status(400).json({ message: seatError });
         const ownerId = getAccountOwnerId(request);
         const connection = await getPool().connect();
+        let createdMember;
         try {
             await connection.query("BEGIN");
             const organization = await getOrganization(getAccountOwnerId(request));
@@ -465,7 +476,7 @@ export function registerAuthRoutes(app) {
             await replaceMemberTeams(connection, ownerId, member.id, teamIds);
             await recordMemberAudit(ownerId, request.user.sub, member, role === "admin" ? "administrator_created" : "member_created", { role, canCreateBilling, canAccessBilling, canAccessAccounting, canAccessCompanyEmail, canSwitchGroupCompanies, canManageCalendar, teamIds }, connection);
             await connection.query("COMMIT");
-            response.status(201).json({ member: publicUser(member) });
+            createdMember = member;
         } catch (error) {
             await connection.query("ROLLBACK").catch(() => {});
             if (error.code === "23505") return response.status(409).json({ message: "Ce nom d’utilisateur est déjà utilisé." });
@@ -474,6 +485,25 @@ export function registerAuthRoutes(app) {
         } finally {
             connection.release();
         }
+        const mobileOnboarding = MOBILE_ONBOARDING_ROLES.has(role) ? await sendMemberMobileWelcome(createdMember) : null;
+        response.status(201).json({ member: publicUser(createdMember), ...(mobileOnboarding ? { mobileOnboarding } : {}) });
+    }));
+
+    app.post("/api/auth/members/:memberId/mobile-welcome", requireAccountAdministrator, asyncHandler(async (request, response) => {
+        const memberId = positiveId(request.params.memberId);
+        if (!memberId) return response.status(400).json({ message: "Accès invalide." });
+        const { rows } = await getPool().query(`
+            SELECT id, username, role, full_name, email, is_active
+            FROM depannhome_users
+            WHERE id=$1 AND account_owner_id=$2 AND id<>$2
+        `, [memberId, getAccountOwnerId(request)]);
+        const member = rows[0];
+        if (!member) return response.status(404).json({ message: "Accès introuvable." });
+        if (!member.is_active || !MOBILE_ONBOARDING_ROLES.has(member.role) || !EMAIL_PATTERN.test(member.email || "")) {
+            return response.status(400).json({ message: "L’envoi du guide nécessite un accès mobile actif avec une adresse e-mail valide." });
+        }
+        const mobileOnboarding = await sendMemberMobileWelcome(member);
+        response.status(mobileOnboarding.emailSent ? 200 : 503).json({ mobileOnboarding, message: mobileOnboarding.message });
     }));
 
     app.patch("/api/auth/members/:memberId", requireAccountAdministrator, asyncHandler(async (request, response) => {
@@ -966,6 +996,19 @@ function requireAccountAdministrator(request, response, next) {
         return response.status(403).json({ message: "Accès réservé à l’administrateur du compte." });
     }
     return next();
+}
+
+async function sendMemberMobileWelcome(member) {
+    try {
+        await sendMobileWelcomeEmail({ recipient: member.email, name: member.full_name, username: member.username });
+        return { installationUrl: "/installer-mobile", emailSent: true, message: "L’e-mail d’accueil mobile a été transmis au service d’envoi." };
+    } catch (error) {
+        console.warn("[mobile-onboarding] email unavailable", error.code || error.name);
+        const message = error.code === "PUBLIC_BASE_URL_INVALID" || error.code === "SMTP_NOT_CONFIGURED"
+            ? error.message
+            : "L’e-mail d’accueil mobile n’a pas été envoyé. Réessayez depuis la liste des accès.";
+        return { installationUrl: "/installer-mobile", emailSent: false, message };
+    }
 }
 
 function requireWorkstationSecurityAccess(request, response, next) {

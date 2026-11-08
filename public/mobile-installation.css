@@ -1,0 +1,37 @@
+.mobile-installation .solution-hero > .section-shell {
+    position: relative;
+    z-index: 1;
+}
+
+.mobile-installation .solution-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mobile-installation .solution-card h3 {
+    margin-top: 0;
+}
+
+.mobile-installation ol {
+    padding-left: 1.25rem;
+}
+
+.mobile-installation li + li {
+    margin-top: .75rem;
+}
+
+.mobile-installation .button {
+    font: inherit;
+    font-weight: 850;
+}
+
+@media (max-width: 700px) {
+    .mobile-installation .solution-card-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .mobile-installation .nav-shell {
+        flex-wrap: wrap;
+        gap: 10px;
+        padding-block: 10px;
+    }
+}

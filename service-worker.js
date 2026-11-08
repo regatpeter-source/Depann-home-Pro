@@ -1,12 +1,13 @@
 importScripts("./js/offline-replay.js?v=1");
 
-const CACHE_NAME = "depann-home-pro-v652";
+const CACHE_NAME = "depann-home-pro-v654";
 const offlineReplay = globalThis.DepannHomeOfflineReplay;
 const ASSETS = [
     "./",
     "./connexion",
     "./index.html",
     "./css/style.css?v=317",
+    "./css/style.css?v=318",
     "./vendor/maplibre/maplibre-gl.css?v=6.11.2",
     "./css/partner-dialogue.css?v=7",
     "./css/report-editor.css?v=8",
@@ -16,6 +17,9 @@ const ASSETS = [
     "./js/app.js?v=524",
     "./js/app.js?v=525",
     "./js/app.js?v=526",
+    "./js/app.js?v=527",
+    "./js/app.js?v=528",
+    "./js/mobile-installation-qr.js?v=1",
     "./js/client-session.js?v=7",
     "./js/client-session.js?v=11",
     "./js/client-session.js?v=12",
@@ -107,6 +111,8 @@ const ASSETS = [
     "./js/navigation.js?v=546",
     "./js/navigation.js?v=547",
     "./js/navigation.js?v=548",
+    "./js/navigation.js?v=549",
+    "./js/navigation.js?v=550",
     "./js/business-suite.js?v=5",
     "./js/business-suite.js?v=6",
     "./js/business-suite.js?v=7",

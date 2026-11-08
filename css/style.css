@@ -5456,6 +5456,24 @@ body.desktop-device .billing-editor-panel.billing-editor-live-active{
     background:rgba(15,23,42,.5);
 }
 
+.mobile-installation-qr{
+    display:grid;
+    gap:12px;
+    justify-items:start;
+    padding:20px;
+}
+
+.mobile-installation-qr img{
+    width:260px;
+    max-width:100%;
+    height:auto;
+    background:#fff;
+}
+
+.mobile-installation-qr a{
+    overflow-wrap:anywhere;
+}
+
 .device-management-heading,
 .device-permissions-form,
 .device-permissions-summary,
