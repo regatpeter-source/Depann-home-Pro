@@ -11,7 +11,8 @@ permissions:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    # Les tests OCR dépendent des polices système : ubuntu-26.04 casse leur rendu.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     services:
       postgres:
