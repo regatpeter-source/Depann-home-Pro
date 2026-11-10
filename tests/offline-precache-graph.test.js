@@ -30,7 +30,7 @@ test("le cache hors ligne contient les versions exactes des modules accessibles 
     }
     assert.deepEqual(missing, [], `Modules absents du cache : ${missing.join(", ")}`);
     const businessSuiteModules = [...seen].filter(url => new URL(url).pathname.endsWith("/js/business-suite.js"));
-    assert.deepEqual(businessSuiteModules, [new URL("js/business-suite.js?v=9", root).href]);
+    assert.deepEqual(businessSuiteModules, [new URL("js/business-suite.js?v=10", root).href]);
     const clientsModules = [...seen].filter(url => new URL(url).pathname.endsWith("/js/clients.js"));
     assert.deepEqual(clientsModules, [new URL("js/clients.js?v=188", root).href]);
     const workspaceModules = [...seen].filter(url => new URL(url).pathname.endsWith("/js/desktop-workspace.js"));

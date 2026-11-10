@@ -4,7 +4,7 @@ import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreato
 import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=228";
 import { renderAccounting } from "./accounting.js?v=39";
 import { renderPurchases } from "./purchases.js?v=136";
-import { renderBusinessSuite } from "./business-suite.js?v=9";
+import { renderBusinessSuite } from "./business-suite.js?v=10";
 import { updateDesktopGreeting } from "./desktop-greeting.js?v=1";
 import { getActiveCompanyId, getSessionDisplayName } from "./session-context.js?v=1";
 import { renderMobileInstallationQr, showMobileInstallationQr } from "./mobile-installation-qr.js?v=1";

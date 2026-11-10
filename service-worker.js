@@ -130,6 +130,7 @@ const ASSETS = [
     "./js/business-suite.js?v=7",
     "./js/business-suite.js?v=8",
     "./js/business-suite.js?v=9",
+    "./js/business-suite.js?v=10",
     "./js/reminder-dashboard.js?v=1",
     "./js/reminder-dashboard.js?v=2",
     "./js/operations-map.js?v=10",

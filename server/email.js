@@ -69,6 +69,38 @@ export async function sendDocumentEmail({ recipient, recipientName, documentLabe
     });
 }
 
+export async function sendCustomerPortalLinkEmail({ recipient, recipientName, url, expiresAt, documentLabels }) {
+    const greeting = recipientName ? `Bonjour ${recipientName},` : "Bonjour,";
+    const documents = documentLabels.join(", ");
+    const expiry = new Date(expiresAt).toLocaleDateString("fr-FR");
+    const safeUrl = escapeHtml(url);
+    return sendEmail({
+        recipient,
+        subject: "Vos documents Depann'Home Pro",
+        text: `${greeting}\n\nVos documents sont disponibles sur le portail client sécurisé jusqu’au ${expiry} :\n${url}\n\nDocuments : ${documents}\n\nCordialement,`,
+        html: `<p>${escapeHtml(greeting)}</p><p>Vos documents sont disponibles sur le portail client sécurisé jusqu’au ${escapeHtml(expiry)}.</p><p><a href="${safeUrl}">Consulter mes documents</a></p><p>Documents : ${escapeHtml(documents)}</p><p>Cordialement,</p>`
+    });
+}
+
+export async function sendCustomerQuoteDecisionEmail({ recipient, documentNumber, clientName, decision, signerName, signerEmail, message, decidedAt }) {
+    const decisionLabel = decision === "accepted" ? "accepté" : "refusé";
+    const details = [
+        `Devis : ${documentNumber}`,
+        `Client : ${clientName}`,
+        `Décision : ${decisionLabel}`,
+        `Nom saisi : ${signerName}`,
+        `E-mail saisi : ${signerEmail || "non renseigné"}`,
+        `Date : ${new Date(decidedAt).toLocaleString("fr-FR")}`,
+        `Message : ${message || "aucun"}`
+    ].join("\n");
+    return sendEmail({
+        recipient,
+        subject: `Décision client sur le devis ${documentNumber}`,
+        text: `Une décision a été enregistrée dans le portail client.\n\n${details}\n\nCette décision par clic ne constitue pas une signature électronique certifiée.`,
+        html: `<p>Une décision a été enregistrée dans le portail client.</p><p><strong>Devis :</strong> ${escapeHtml(documentNumber)}<br><strong>Client :</strong> ${escapeHtml(clientName)}<br><strong>Décision :</strong> ${escapeHtml(decisionLabel)}<br><strong>Nom saisi :</strong> ${escapeHtml(signerName)}<br><strong>E-mail saisi :</strong> ${escapeHtml(signerEmail || "non renseigné")}<br><strong>Date :</strong> ${escapeHtml(new Date(decidedAt).toLocaleString("fr-FR"))}<br><strong>Message :</strong> ${escapeHtml(message || "aucun")}</p><p>Cette décision par clic ne constitue pas une signature électronique certifiée.</p>`
+    });
+}
+
 export async function sendSupportRequestEmail({ senderName, senderEmail, senderUsername, message }) {
     const sender = senderName || senderUsername || "Technicien";
     const contact = senderEmail || "E-mail non renseigné";

@@ -36,8 +36,23 @@ test("le portail ne stocke jamais le jeton brut et protège la décision de devi
     assert.match(portal, /FOR UPDATE/);
     assert.match(portal, /documentType !== "quote"/);
     assert.match(portal, /previous\.rows\[0\]\.decision !== decision/);
-    assert.match(portal, /createHash\("sha256"\)\.update\(output\.buffer\)/);
+    assert.match(portal, /snapshot\.sha256/);
+    assert.match(portal, /SET status=\$3,updated_at=NOW\(\)/);
+    assert.match(portal, /ne constitue pas une signature électronique certifiée/);
     assert.match(portal, /owner_id=\$1 AND document_id=\$2/);
+});
+
+test("les PDF du portail sont archivés par lien avec leur empreinte immuable", async () => {
+    const [migration, schema] = await Promise.all([
+        read("database/migrations/0044_customer_portal_document_snapshots.sql"),
+        read("database/schema.sql")
+    ]);
+    for (const source of [migration, schema]) {
+        assert.match(source, /depannhome_customer_portal_document_snapshots/);
+        assert.match(source, /pdf_data BYTEA NOT NULL/);
+        assert.match(source, /pdf_sha256 CHAR\(64\) NOT NULL/);
+        assert.match(source, /PRIMARY KEY \(portal_link_id, document_id\)/);
+    }
 });
 
 test("le stock est un journal audité avec contrôle anti-stock négatif et transfert atomique", async () => {

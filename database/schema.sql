@@ -2194,6 +2194,22 @@ CREATE TABLE IF NOT EXISTS depannhome_quote_decisions (
 );
 CREATE INDEX IF NOT EXISTS depannhome_quote_decisions_client_idx ON depannhome_quote_decisions(owner_id,decided_at DESC);
 
+CREATE TABLE IF NOT EXISTS depannhome_customer_portal_document_snapshots (
+    owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE,
+    portal_link_id UUID NOT NULL REFERENCES depannhome_customer_portal_links(id) ON DELETE CASCADE,
+    document_id BIGINT NOT NULL REFERENCES depannhome_billing_documents(id) ON DELETE RESTRICT,
+    document_type VARCHAR(10) NOT NULL CHECK (document_type IN ('quote','invoice')),
+    document_number VARCHAR(80) NOT NULL,
+    filename VARCHAR(160) NOT NULL,
+    mime_type VARCHAR(100) NOT NULL,
+    pdf_data BYTEA NOT NULL,
+    pdf_sha256 CHAR(64) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (portal_link_id, document_id)
+);
+CREATE INDEX IF NOT EXISTS depannhome_customer_portal_document_snapshots_owner_idx
+    ON depannhome_customer_portal_document_snapshots(owner_id, portal_link_id);
+
 CREATE TABLE IF NOT EXISTS depannhome_client_sites (
     id BIGSERIAL PRIMARY KEY, owner_id BIGINT NOT NULL REFERENCES depannhome_users(id) ON DELETE CASCADE, client_id VARCHAR(100) NOT NULL,
     name VARCHAR(160) NOT NULL, address VARCHAR(500) NOT NULL DEFAULT '', postal_code VARCHAR(20) NOT NULL DEFAULT '', city VARCHAR(120) NOT NULL DEFAULT '',

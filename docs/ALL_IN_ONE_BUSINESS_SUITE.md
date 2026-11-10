@@ -14,10 +14,10 @@ Sur un poste administratif :
 
 1. Choisir un client et les documents à partager.
 2. Définir la durée du lien (1 à 90 jours).
-3. Copier le lien affiché une seule fois et le transmettre au client.
+3. Envoyer le lien au client par e-mail si son adresse est renseignée et si l’envoi est sélectionné, ou copier le lien affiché une seule fois pour le transmettre manuellement.
 4. Révoquer le lien à tout moment depuis le même écran.
 
-Le serveur conserve uniquement un condensat SHA-256 du jeton. Les accès sont datés et pseudonymisés. Un client peut consulter ses PDF et accepter ou refuser un devis. La décision est définitive, horodatée et liée à l’empreinte du document ; elle ne modifie pas les données légales d’une facture émise.
+Le serveur conserve uniquement un condensat SHA-256 du jeton et archive, pour chaque lien, les PDF exacts qui seront présentés au client. Les accès sont datés et pseudonymisés. Le client doit ouvrir le PDF avant de pouvoir accepter ou refuser un devis finalisé ; les brouillons et devis annulés ne peuvent pas recevoir de décision. La décision définitive est horodatée et liée à l’empreinte du PDF archivé ; le statut du devis est mis à jour en conséquence. Une notification e-mail est envoyée à l’adresse de l’entreprise configurée dans sa fiche de facturation. Si elle échoue, son état est visible dans **Liens et décisions** et l’envoi peut être relancé. Une décision par clic ne constitue pas une signature électronique certifiée. La décision ne modifie pas les données légales d’une facture émise.
 
 ## Sites, équipements et contrats
 
@@ -75,4 +75,4 @@ L’écran affiche au maximum 300 rappels, en donnant la priorité à ceux qui s
 
 ## Sécurité et exploitation
 
-Toutes les données métier sont filtrées par `owner_id`. Les ressources liées sont vérifiées contre le même client et la même entreprise. Les migrations `0038_all_in_one_business_suite.sql` et `0042_maintenance_contract_lifecycle.sql` sont appliquées par le mécanisme habituel ; le schéma canonique est synchronisé dans `database/schema.sql`.
+Toutes les données métier sont filtrées par `owner_id`. Les ressources liées sont vérifiées contre le même client et la même entreprise. Les migrations `0038_all_in_one_business_suite.sql`, `0042_maintenance_contract_lifecycle.sql` et `0044_customer_portal_document_snapshots.sql` sont appliquées par le mécanisme habituel ; le schéma canonique est synchronisé dans `database/schema.sql`.
