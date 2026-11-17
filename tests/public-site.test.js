@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 const landing = readFileSync(new URL("../public/landing.html", import.meta.url), "utf8");
@@ -244,4 +244,17 @@ test("la déconnexion et le lancement PWA ouvrent l’authentification plutôt q
 test("la demande de partenariat est proposée sur la vitrine publique", () => {
     assert.match(landing, /class="button button-small partner-offer-action" href="#demande-offre">Devenir partenaire/);
     assert.match(landing, /value="partnership">Devenir partenaire/);
+});
+
+test("Google Tag Manager n?est charg? sur la vitrine qu?apr?s consentement", () => {
+    const pages = readdirSync(new URL("../public/", import.meta.url)).filter(name => name.endsWith(".html"));
+    for (const name of pages) {
+        const page = readFileSync(new URL(`../public/${name}`, import.meta.url), "utf8");
+        assert.match(page, /<script src="\/site-assets\/analytics-consent\.js\?v=\d+" defer><\/script>\s*<\/head>/, name);
+    }
+    const consentScript = readFileSync(new URL("../public/analytics-consent.js", import.meta.url), "utf8");
+    assert.match(consentScript, /GTM_ID = "GTM-PSP482R9"/);
+    assert.match(consentScript, /googletagmanager\.com\/gtm\.js\?id=\$\{GTM_ID\}/);
+    assert.match(consentScript, /if \(consent === "granted"\) loadGoogleTagManager\(\)/);
+    assert.match(privacy, /data-cookie-settings/);
 });

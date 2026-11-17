@@ -15,7 +15,7 @@ function response() {
 
 test("la CSP autorise les aperçus PDF blob sans autoriser l’encapsulation de l’application", () => {
     const directives = contentSecurityPolicy().directives;
-    assert.deepEqual(directives.scriptSrc, ["'self'"]);
+    assert.deepEqual(directives.scriptSrc, ["'self'", "https://www.googletagmanager.com"]);
     assert.deepEqual(directives.scriptSrcAttr, ["'none'"]);
     assert.deepEqual(directives.objectSrc, ["'none'"]);
     assert.deepEqual(directives.frameAncestors, ["'none'"]);
