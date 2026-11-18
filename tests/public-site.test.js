@@ -253,7 +253,7 @@ test("Google Tag Manager n’est chargé sur la vitrine qu’après consentement
         assert.match(page, /<script src="\/site-assets\/analytics-consent\.js\?v=\d+" defer><\/script>\s*<\/head>/, name);
     }
     const consentScript = readFileSync(new URL("../public/analytics-consent.js", import.meta.url), "utf8");
-    assert.match(consentScript, /GTM_ID = "GTM-PSP482R9"/);
+    assert.match(consentScript, /GTM_ID = "GTM-P29ZXC9C"/);
     assert.match(consentScript, /googletagmanager\.com\/gtm\.js\?id=\$\{GTM_ID\}/);
     assert.match(consentScript, /consentAge < 0 \|\| consentAge > CONSENT_MAX_AGE_MS/);
     assert.match(consentScript, /navigator\.doNotTrack === "1" \|\| gtmLoaded/);

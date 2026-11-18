@@ -1,5 +1,5 @@
 (() => {
-    const GTM_ID = "GTM-PSP482R9";
+    const GTM_ID = "GTM-P29ZXC9C";
     const STORAGE_KEY = "dhp-analytics-consent";
     const CONSENT_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 182;
     let gtmLoaded = false;
