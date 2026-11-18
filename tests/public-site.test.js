@@ -246,7 +246,7 @@ test("la demande de partenariat est proposée sur la vitrine publique", () => {
     assert.match(landing, /value="partnership">Devenir partenaire/);
 });
 
-test("Google Tag Manager n?est charg? sur la vitrine qu?apr?s consentement", () => {
+test("Google Tag Manager n’est chargé sur la vitrine qu’après consentement", () => {
     const pages = readdirSync(new URL("../public/", import.meta.url)).filter(name => name.endsWith(".html"));
     for (const name of pages) {
         const page = readFileSync(new URL(`../public/${name}`, import.meta.url), "utf8");
@@ -255,6 +255,10 @@ test("Google Tag Manager n?est charg? sur la vitrine qu?apr?s consentement", () 
     const consentScript = readFileSync(new URL("../public/analytics-consent.js", import.meta.url), "utf8");
     assert.match(consentScript, /GTM_ID = "GTM-PSP482R9"/);
     assert.match(consentScript, /googletagmanager\.com\/gtm\.js\?id=\$\{GTM_ID\}/);
+    assert.match(consentScript, /consentAge < 0 \|\| consentAge > CONSENT_MAX_AGE_MS/);
+    assert.match(consentScript, /navigator\.doNotTrack === "1" \|\| gtmLoaded/);
     assert.match(consentScript, /if \(consent === "granted"\) loadGoogleTagManager\(\)/);
+    assert.match(consentScript, /dataLayer\.push\(\{ event: eventName \}\)/);
+    assert.match(siteScript, /CustomEvent\("dhp:google-analytics-event", \{ detail: \{ eventName: "generate_lead" \} \}\)/);
     assert.match(privacy, /data-cookie-settings/);
 });

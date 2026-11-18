@@ -14,14 +14,14 @@ export function contentSecurityPolicy() {
     const directives = {
         defaultSrc: ["'self'"],
         baseUri: ["'self'"],
-        connectSrc: ["'self'", "https://tiles.openfreemap.org", "https://*.google-analytics.com", "https://*.analytics.google.com", "https://*.googletagmanager.com"],
+        connectSrc: ["'self'", "https://tiles.openfreemap.org", "https://*.google-analytics.com", "https://*.analytics.google.com", "https://*.googletagmanager.com", "https://ad.doubleclick.net", "https://www.google.com"],
         fontSrc: ["'self'", "data:"],
         formAction: ["'self'"],
         frameAncestors: ["'none'"],
         frameSrc: ["'self'", "blob:"],
         imgSrc: ["'self'", "data:", "blob:", "https://tiles.openfreemap.org", "https://*.google-analytics.com", "https://*.googletagmanager.com"],
         objectSrc: ["'none'"],
-        scriptSrc: ["'self'", "https://www.googletagmanager.com"],
+        scriptSrc: ["'self'", "https://www.googletagmanager.com", "https://googleads.g.doubleclick.net"],
         scriptSrcAttr: ["'none'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
         workerSrc: ["'self'", "blob:"]

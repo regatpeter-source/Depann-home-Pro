@@ -8,7 +8,8 @@
         try {
             const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "null");
             if (!stored || !["granted", "denied"].includes(stored.choice)) return null;
-            if (Date.now() - Number(stored.at || 0) > CONSENT_MAX_AGE_MS) return null;
+            const consentAge = Date.now() - Number(stored.at || 0);
+            if (consentAge < 0 || consentAge > CONSENT_MAX_AGE_MS) return null;
             return stored.choice;
         } catch {
             return null;
@@ -24,7 +25,7 @@
     }
 
     function loadGoogleTagManager() {
-        if (gtmLoaded) return;
+        if (navigator.doNotTrack === "1" || gtmLoaded) return;
         gtmLoaded = true;
         const script = document.createElement("script");
         script.async = true;
@@ -100,9 +101,19 @@
         });
     }
 
+    function bindAnalyticsEvents() {
+        document.addEventListener("dhp:google-analytics-event", event => {
+            const eventName = String(event.detail?.eventName || "");
+            if (navigator.doNotTrack === "1" || readConsent() !== "granted" || !/^[a-z][a-z0-9_]{0,39}$/.test(eventName)) return;
+            window.dataLayer = window.dataLayer || [];
+            window.dataLayer.push({ event: eventName });
+        });
+    }
+
     const consent = readConsent();
     if (consent === "granted") loadGoogleTagManager();
     bindSettingsLinks();
+    bindAnalyticsEvents();
     if (consent === null) {
         if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", showBanner, { once: true });
         else showBanner();
