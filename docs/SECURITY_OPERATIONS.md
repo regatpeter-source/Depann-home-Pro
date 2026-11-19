@@ -25,7 +25,9 @@ Ne jamais changer cette variable silencieusement. Une future migration vers un c
 
 Les écritures HTTP navigateur sont refusées lorsque `Origin` ou `Sec-Fetch-Site` indique un appel intersite. Les endpoints externes authentifiés (intake partenaire, dialogue externe, webhooks PDP et Sandbox) sont explicitement exemptés.
 
-Helmet applique une CSP : scripts, connexions et workers locaux uniquement ; scripts inline, objets et frames interdits. `style-src 'unsafe-inline'` reste nécessaire aux styles calculés de graphiques, calendriers et éditeur de documents. L’objectif suivant est de remplacer ces styles par classes/variables validées puis de retirer cette exception.
+Helmet applique une CSP restrictive : ressources locales par défaut, exceptions explicites pour la cartographie et les balises Google ; scripts inline et objets interdits. Les frames sont limitées à la même origine et aux aperçus `blob:`, tandis que `frame-ancestors 'none'` interdit l’encapsulation de l’application. `style-src 'unsafe-inline'` reste nécessaire aux styles calculés de graphiques, calendriers et éditeur de documents. L’objectif suivant est de remplacer ces styles par classes/variables validées puis de retirer cette exception.
+
+Pour Google Tag, `connect-src` autorise notamment les origines exactes `https://analytics.google.com` et `https://stats.g.doubleclick.net`. L’autorisation `https://*.analytics.google.com` couvre les sous-domaines, mais pas `https://analytics.google.com` lui-même. Ces exceptions de connexion n’autorisent pas de scripts supplémentaires et ne doivent pas être remplacées par une ouverture globale (`*`, `https:` ou `https://*.doubleclick.net`). Après modification de la CSP, redéployer ou redémarrer le serveur, recharger la page et relancer le diagnostic Google Tag.
 
 ## TOTP
 

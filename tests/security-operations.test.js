@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { once } from "node:events";
 import { readFileSync } from "node:fs";
+import express from "express";
+import helmet from "helmet";
 import { contentSecurityPolicy, createOriginProtection, securityConfigurationFingerprint } from "../server/security-hardening.js";
 import { loadMigrations } from "../server/database-migrations.js";
 import { postgresConnection } from "../scripts/database-backup.js";
@@ -21,6 +24,33 @@ test("la CSP autorise les aperçus PDF blob sans autoriser l’encapsulation de 
     assert.deepEqual(directives.frameAncestors, ["'none'"]);
     assert.deepEqual(directives.frameSrc, ["'self'", "blob:"]);
     assert.match(securityConfigurationFingerprint(), /^[a-f0-9]{64}$/);
+});
+
+test("la CSP HTTP autorise les connexions Google Tag signalées sans ouverture globale", async t => {
+    const app = express();
+    app.use(helmet({ contentSecurityPolicy: contentSecurityPolicy(), crossOriginEmbedderPolicy: false }));
+    app.get("/", (_request, response) => response.send("OK"));
+    const server = app.listen(0, "127.0.0.1");
+    t.after(() => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())));
+    await once(server, "listening");
+
+    const result = await fetch(`http://127.0.0.1:${server.address().port}/`, { method: "HEAD" });
+    assert.equal(result.status, 200);
+    const policy = result.headers.get("content-security-policy");
+    assert.ok(policy);
+    const directives = new Map(policy.split(";").map(directive => {
+        const [name, ...sources] = directive.trim().split(/\s+/);
+        return [name, sources];
+    }));
+    const connectSources = directives.get("connect-src");
+    assert.ok(connectSources);
+    for (const origin of ["https://analytics.google.com", "https://stats.g.doubleclick.net"]) {
+        assert.ok(connectSources.includes(origin), `${origin} doit être autorisé dans connect-src`);
+        assert.ok(!directives.get("script-src").includes(origin), `${origin} ne doit pas autoriser de scripts`);
+    }
+    for (const source of ["*", "https:", "https://*.google.com", "https://*.doubleclick.net"]) {
+        assert.ok(!connectSources.includes(source), `${source} ne doit pas ouvrir connect-src`);
+    }
 });
 
 test("les pages de callback utilisent un script externe compatible avec la CSP", () => {
