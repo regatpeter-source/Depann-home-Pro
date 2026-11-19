@@ -32,7 +32,9 @@ Depuis un PC, un QR code apparaît après la création d’un accès mobile, mê
 
 L’e-mail reste obligatoire lors de la création des accès mobiles : le QR est un moyen d’installation supplémentaire, pas une alternative à la validation de l’appareil.
 
-Le guide n’amorce pas le service worker avant connexion, car son précache contient des ressources protégées. La préparation hors ligne reste effectuée par l’application après authentification. Si le navigateur ne propose pas encore l’installation, le guide invite à ouvrir l’application et à terminer l’autorisation de l’appareil avant de réessayer.
+Le guide n’amorce pas le service worker : la préparation hors ligne est lancée par l’application après authentification. Si le navigateur ne propose pas encore l’installation, le guide invite à ouvrir l’application et à terminer l’autorisation de l’appareil avant de réessayer.
+
+Le préchargement obligatoire du service worker ne contient que des ressources publiques. Le catalogue `data/database.json` et le manifeste `assets/notices/manifest.json` sont chargés séparément avec le cookie de session : un refus `401/403`, notamment lors d’une mise à jour après expiration de session, est signalé et ne bloque pas l’installation du cache public. Les autres erreurs de préchargement restent bloquantes. Une session autorisée conserve ces deux ressources hors ligne dès l’installation ; sinon, elles sont mises en cache lors d’un chargement ultérieur réussi. Aucune réponse HTTP en erreur n’est enregistrée dans le cache.
 
 L’envoi nécessite les variables `BREVO_SMTP_*` existantes et `PUBLIC_BASE_URL` (ou `RENDER_EXTERNAL_URL`) avec une adresse HTTPS de confiance, sans identifiants intégrés. L’hôte fourni par une requête n’est jamais utilisé dans cet e-mail. HTTP n’est accepté que sur une adresse de boucle locale hors production.
 

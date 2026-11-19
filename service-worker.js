@@ -1,6 +1,6 @@
 importScripts("./js/offline-replay.js?v=1");
 
-const CACHE_NAME = "depann-home-pro-v656";
+const CACHE_NAME = "depann-home-pro-v657";
 const offlineReplay = globalThis.DepannHomeOfflineReplay;
 const ASSETS = [
     "./",
@@ -165,15 +165,25 @@ const ASSETS = [
     "./js/utils.js",
     "./js/utils.js?v=44",
     "./manifest.json",
-    "./assets/logo.png.png",
-    "./data/database.json",
-    "./assets/notices/manifest.json"
+    "./assets/logo.png.png"
 ];
+const AUTHENTICATED_ASSETS = ["./data/database.json", "./assets/notices/manifest.json"];
 
 self.addEventListener("install", event => {
     event.waitUntil(
         caches.open(CACHE_NAME)
-            .then(cache => cache.addAll(ASSETS))
+            .then(async cache => {
+                await cache.addAll(ASSETS);
+                await Promise.all(AUTHENTICATED_ASSETS.map(async asset => {
+                    const response = await fetch(asset, { credentials: "same-origin", cache: "no-store" });
+                    if ([401, 403].includes(response.status)) {
+                        console.info("Préchargement différé : connexion ou droits requis.", asset, response.status);
+                        return;
+                    }
+                    if (!response.ok) throw new Error(`Préchargement impossible de ${asset} (${response.status}).`);
+                    await cache.put(asset, response);
+                }));
+            })
             .then(() => self.skipWaiting())
             .catch(error => {
                 console.error("Préchargement du cache impossible.", error);
@@ -207,8 +217,10 @@ self.addEventListener("fetch", event => {
 
     const fetchAndCache = () => fetch(event.request)
             .then(response => {
-                const copy = response.clone();
-                caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
+                if (response.ok) {
+                    const copy = response.clone();
+                    event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy)));
+                }
                 return response;
             });
     const cachedFallback = () => caches.match(event.request, { ignoreSearch: isOfflineStaticData }).then(cached => cached || fetchAndCache());
