@@ -250,7 +250,7 @@ test("Google Tag Manager n’est chargé sur la vitrine qu’après consentement
     const pages = readdirSync(new URL("../public/", import.meta.url)).filter(name => name.endsWith(".html"));
     for (const name of pages) {
         const page = readFileSync(new URL(`../public/${name}`, import.meta.url), "utf8");
-        assert.match(page, /<script src="\/site-assets\/analytics-consent\.js\?v=\d+" defer><\/script>\s*<\/head>/, name);
+        assert.match(page, /<script src="\/site-assets\/analytics-consent\.js\?v=4" defer><\/script>\s*<\/head>/, name);
     }
     const consentScript = readFileSync(new URL("../public/analytics-consent.js", import.meta.url), "utf8");
     assert.match(consentScript, /GTM_ID = "GTM-P29ZXC9C"/);
@@ -259,6 +259,11 @@ test("Google Tag Manager n’est chargé sur la vitrine qu’après consentement
     assert.match(consentScript, /navigator\.doNotTrack === "1" \|\| gtmLoaded/);
     assert.match(consentScript, /if \(consent === "granted"\) loadGoogleTagManager\(\)/);
     assert.match(consentScript, /dataLayer\.push\(\{ event: eventName \}\)/);
+    assert.match(consentScript, /GOOGLE_ADS_CONVERSION_ID = "AW-18573759430\/wS1kCIb5ibsdEMan1JhF"/);
+    assert.match(consentScript, /window\.gtag_report_conversion = function gtagReportConversion\(url\)/);
+    assert.match(consentScript, /window\.gtag\("event", "conversion"/);
     assert.match(siteScript, /CustomEvent\("dhp:google-analytics-event", \{ detail: \{ eventName: "generate_lead" \} \}\)/);
+    assert.match(siteScript, /window\.gtag_report_conversion\?\.\(\)/);
+    assert.match(landing, /site-assets\/site\.js\?v=8/);
     assert.match(privacy, /data-cookie-settings/);
 });

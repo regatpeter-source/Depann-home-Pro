@@ -114,6 +114,7 @@ offerForm?.addEventListener("submit", async event => {
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.message || "Impossible d’envoyer votre demande.");
     document.dispatchEvent(new CustomEvent("dhp:google-analytics-event", { detail: { eventName: "generate_lead" } }));
+    window.gtag_report_conversion?.();
     offerForm.reset();
     offerStatus.classList.add("success");
     offerStatus.textContent = result.message;

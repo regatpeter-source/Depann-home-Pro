@@ -1,5 +1,6 @@
 (() => {
     const GTM_ID = "GTM-P29ZXC9C";
+    const GOOGLE_ADS_CONVERSION_ID = "AW-18573759430/wS1kCIb5ibsdEMan1JhF";
     const STORAGE_KEY = "dhp-analytics-consent";
     const CONSENT_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 182;
     let gtmLoaded = false;
@@ -109,6 +110,22 @@
             window.dataLayer.push({ event: eventName });
         });
     }
+
+    window.gtag_report_conversion = function gtagReportConversion(url) {
+        const callback = () => {
+            if (typeof url !== "undefined") window.location = url;
+        };
+        if (navigator.doNotTrack === "1" || readConsent() !== "granted") {
+            callback();
+            return false;
+        }
+        loadGoogleTagManager();
+        window.gtag("event", "conversion", {
+            send_to: GOOGLE_ADS_CONVERSION_ID,
+            event_callback: callback
+        });
+        return false;
+    };
 
     const consent = readConsent();
     if (consent === "granted") loadGoogleTagManager();
