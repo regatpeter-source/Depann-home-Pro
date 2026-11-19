@@ -18,24 +18,15 @@ function response() {
 
 test("la CSP autorise les aperçus PDF blob sans autoriser l’encapsulation de l’application", () => {
     const directives = contentSecurityPolicy().directives;
-    assert.deepEqual(directives.scriptSrc, ["'self'", "https://www.googletagmanager.com", "https://tagmanager.google.com", "https://www.googleadservices.com", "https://www.google.com", "https://googleads.g.doubleclick.net"]);
+    assert.deepEqual(directives.scriptSrc, ["'self'", "https://www.googletagmanager.com", "https://googleads.g.doubleclick.net"]);
     assert.deepEqual(directives.scriptSrcAttr, ["'none'"]);
     assert.deepEqual(directives.objectSrc, ["'none'"]);
     assert.deepEqual(directives.frameAncestors, ["'none'"]);
-    assert.deepEqual(directives.frameSrc, ["'self'", "blob:", "https://www.googletagmanager.com"]);
+    assert.deepEqual(directives.frameSrc, ["'self'", "blob:"]);
     assert.match(securityConfigurationFingerprint(), /^[a-f0-9]{64}$/);
 });
 
-function allowsHttpsUrl(sources, value) {
-    const { host } = new URL(value);
-    return sources.some(source => {
-        if (!source.startsWith("https://")) return false;
-        const allowedHost = source.slice("https://".length).split("/")[0];
-        return allowedHost.startsWith("*.") ? host.endsWith(allowedHost.slice(1)) : host === allowedHost;
-    });
-}
-
-test("la CSP HTTP autorise Tag Assistant, GA4 et Google Ads sans ouverture globale", async t => {
+test("la CSP HTTP autorise les ressources Google signalées sans ouverture globale", async t => {
     const app = express();
     app.use(helmet({ contentSecurityPolicy: contentSecurityPolicy(), crossOriginEmbedderPolicy: false }));
     app.get("/", (_request, response) => response.send("OK"));
@@ -51,22 +42,23 @@ test("la CSP HTTP autorise Tag Assistant, GA4 et Google Ads sans ouverture globa
         const [name, ...sources] = directive.trim().split(/\s+/);
         return [name, sources];
     }));
-    const expectations = {
-        "script-src": ["https://www.googletagmanager.com/gtm.js?id=GTM-P29ZXC9C", "https://tagmanager.google.com/debug/bootstrap.js", "https://www.googleadservices.com/pagead/conversion_async.js", "https://www.google.com/pagead/1p-conversion/18573759430/", "https://googleads.g.doubleclick.net/pagead/viewthroughconversion/18573759430/"],
-        "style-src": ["https://www.googletagmanager.com/debug/badge.css", "https://tagmanager.google.com/debug/style.css", "https://fonts.googleapis.com/css?family=Roboto"],
-        "font-src": ["https://fonts.gstatic.com/s/roboto/v30/font.woff2"],
-        "img-src": ["https://www.google.fr/ads/ga-audiences?t=sr", "https://ssl.gstatic.com/debug.png", "https://www.gstatic.com/debug.png", "https://www.googleadservices.com/pagead/conversion/18573759430/", "https://googleads.g.doubleclick.net/pagead/viewthroughconversion/18573759430/", "https://pagead2.googlesyndication.com/pagead/1p-user-list/18573759430/"],
-        "connect-src": ["https://www.google.fr/ads/ga-audiences?t=sr", "https://analytics.google.com/g/collect", "https://region1.analytics.google.com/g/collect", "https://stats.g.doubleclick.net/g/collect", "https://www.google.com/ccm/collect", "https://www.googleadservices.com/pagead/conversion/18573759430/", "https://pagead2.googlesyndication.com/ccm/collect"],
-        "frame-src": ["https://www.googletagmanager.com/static/service_worker/sw_iframe.html"]
-    };
-    for (const [directive, urls] of Object.entries(expectations)) {
-        const sources = directives.get(directive);
-        assert.ok(sources, `${directive} doit être défini`);
-        for (const url of urls) assert.ok(allowsHttpsUrl(sources, url), `${url} doit être autorisé par ${directive}`);
-        assert.equal(allowsHttpsUrl(sources, "https://evil.example/collect"), false, `${directive} ne doit pas autoriser un domaine inconnu`);
-        for (const source of ["*", "https:", "https://*.doubleclick.net"]) assert.ok(!sources.includes(source), `${source} ne doit pas ouvrir ${directive}`);
+    const connectSources = directives.get("connect-src");
+    assert.ok(connectSources);
+    for (const origin of ["https://analytics.google.com", "https://stats.g.doubleclick.net"]) {
+        assert.ok(connectSources.includes(origin), `${origin} doit être autorisé dans connect-src`);
+        assert.ok(!directives.get("script-src").includes(origin), `${origin} ne doit pas autoriser de scripts`);
     }
-    assert.ok(directives.get("script-src").every(source => !source.includes("*")), "script-src ne doit contenir aucun joker");
+    for (const source of ["*", "https:", "https://*.google.com", "https://*.doubleclick.net"]) {
+        assert.ok(!connectSources.includes(source), `${source} ne doit pas ouvrir connect-src`);
+    }
+    assert.deepEqual(directives.get("style-src"), [
+        "'self'", "'unsafe-inline'", "https://www.googletagmanager.com", "https://fonts.googleapis.com"
+    ]);
+    assert.deepEqual(directives.get("img-src"), [
+        "'self'", "data:", "blob:", "https://tiles.openfreemap.org", "https://*.google-analytics.com",
+        "https://*.googletagmanager.com", "https://www.google.fr"
+    ]);
+    assert.deepEqual(directives.get("font-src"), ["'self'", "data:"]);
 });
 
 test("les pages de callback utilisent un script externe compatible avec la CSP", () => {
