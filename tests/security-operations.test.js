@@ -2,9 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import express from "express";
 import helmet from "helmet";
-import { contentSecurityPolicy, createOriginProtection, securityConfigurationFingerprint } from "../server/security-hardening.js";
+import { contentSecurityPolicy, createOriginProtection, PUBLIC_PAGE_HEADERS, securityConfigurationFingerprint } from "../server/security-hardening.js";
 import { loadMigrations } from "../server/database-migrations.js";
 import { postgresConnection } from "../scripts/database-backup.js";
 
@@ -14,6 +15,15 @@ function request({ method = "POST", path = "/api/accounting/aids", origin = "htt
 }
 function response() {
     return { statusCode: 200, body: null, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
+}
+async function startHardenedServer(t, registerRoutes) {
+    const app = express();
+    app.use(helmet({ contentSecurityPolicy: contentSecurityPolicy(), crossOriginEmbedderPolicy: false }));
+    registerRoutes(app);
+    const server = app.listen(0, "127.0.0.1");
+    t.after(() => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())));
+    await once(server, "listening");
+    return `http://127.0.0.1:${server.address().port}`;
 }
 
 test("la CSP autorise les aperçus PDF blob sans autoriser l’encapsulation de l’application", () => {
@@ -27,14 +37,9 @@ test("la CSP autorise les aperçus PDF blob sans autoriser l’encapsulation de 
 });
 
 test("la CSP HTTP autorise les ressources Google signalées sans ouverture globale", async t => {
-    const app = express();
-    app.use(helmet({ contentSecurityPolicy: contentSecurityPolicy(), crossOriginEmbedderPolicy: false }));
-    app.get("/", (_request, response) => response.send("OK"));
-    const server = app.listen(0, "127.0.0.1");
-    t.after(() => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())));
-    await once(server, "listening");
+    const baseUrl = await startHardenedServer(t, app => app.get("/", (_request, response) => response.send("OK")));
 
-    const result = await fetch(`http://127.0.0.1:${server.address().port}/`, { method: "HEAD" });
+    const result = await fetch(`${baseUrl}/`, { method: "HEAD" });
     assert.equal(result.status, 200);
     const policy = result.headers.get("content-security-policy");
     assert.ok(policy);
@@ -59,6 +64,20 @@ test("la CSP HTTP autorise les ressources Google signalées sans ouverture globa
         "https://*.googletagmanager.com", "https://www.google.fr"
     ]);
     assert.deepEqual(directives.get("font-src"), ["'self'", "data:"]);
+});
+
+test("seules les pages publiques relâchent COOP pour la connexion Tag Assistant", async t => {
+    const publicPage = fileURLToPath(new URL("../public/privacy.html", import.meta.url));
+    const baseUrl = await startHardenedServer(t, app => {
+        app.get("/vitrine", (_request, response) => response.sendFile(publicPage, { headers: { ...PUBLIC_PAGE_HEADERS, "Cache-Control": "no-store" } }));
+        app.get("/app", (_request, response) => response.send("OK"));
+    });
+
+    const [showcase, application] = await Promise.all(["/vitrine", "/app"].map(path => fetch(`${baseUrl}${path}`, { method: "HEAD" })));
+    assert.equal(showcase.status, 200);
+    assert.equal(showcase.headers.get("cross-origin-opener-policy"), "unsafe-none");
+    assert.ok(showcase.headers.get("content-security-policy"));
+    assert.equal(application.headers.get("cross-origin-opener-policy"), "same-origin");
 });
 
 test("les pages de callback utilisent un script externe compatible avec la CSP", () => {

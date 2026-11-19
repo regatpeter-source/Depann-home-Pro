@@ -38,6 +38,12 @@ Ce correctif ne modifie pas `script-src`, `connect-src`, `frame-src` ni `font-sr
 
 Lorsque Render affiche **Live**, recharger la page avec `Ctrl+F5` et refaire le test Tag Assistant avec `GTM-P29ZXC9C`, en vérifiant les erreurs CSP de la console. Le conteneur GTM de la vitrine n’est chargé qu’après acceptation des cookies de mesure et si le navigateur n’envoie pas `Do Not Track`. La disparition des trois blocages ne suffit pas à garantir la résolution du statut « Non connecté ».
 
+Tag Assistant ouvre la page testée depuis `tagassistant.google.com` puis dialogue avec elle via `window.opener`. Avec `Cross-Origin-Opener-Policy: same-origin` (valeur par défaut de Helmet), le navigateur remet `window.opener` à `null` et l’aperçu reste « Non connecté ». Les pages publiques de `public/*.html`, seules à charger GTM, sont donc servies par `sendPublicPage()` avec `PUBLIC_PAGE_HEADERS` (`Cross-Origin-Opener-Policy: unsafe-none`). L’application authentifiée (`/connexion`, `/app` et `/` pour un utilisateur connecté) conserve `same-origin`. `same-origin-allow-popups` ne suffit pas, car il ne protège que les fenêtres ouvertes par le site.
+
+`analytics-consent.js` reproduit aussi l’événement `{ "gtm.start", event: "gtm.js" }` de l’extrait officiel avant d’insérer le conteneur : sans lui, les déclencheurs « Page View » / « All Pages » ne se déclenchent pas. Après toute modification de ce script, incrémenter son paramètre `?v=` dans toutes les pages publiques (cache `/site-assets` d’un jour).
+
+Pour l’aperçu, saisir dans Tag Assistant une URL publique (par exemple `https://depannhomepro.com/logiciel-entreprise-depannage`) ou `/` sans être connecté, car `/` sert l’application sans GTM à un utilisateur connecté. Dans l’onglet ouvert, cliquer sur **Accepter** dans le bandeau cookies, puis sur **Réessayer** dans Tag Assistant si la connexion a expiré avant le chargement de GTM.
+
 ## TOTP
 
 Les codes ne sont jamais persistés. Les secrets sont chiffrés par AES-256-GCM. Les défis Créateur et entreprise expirent, sont consommables une fois et limités à cinq échecs. Les succès et échecs sont journalisés dans `depannhome_security_events` avec IP et user-agent hachés.

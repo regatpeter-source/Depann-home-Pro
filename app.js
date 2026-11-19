@@ -18,7 +18,7 @@ import {
 } from "./server/auth.js";
 import { initializeDatabase } from "./server/database.js";
 import { runMigrations } from "./server/database-migrations.js";
-import { contentSecurityPolicy, createOriginProtection, validateSecurityConfiguration } from "./server/security-hardening.js";
+import { contentSecurityPolicy, createOriginProtection, PUBLIC_PAGE_HEADERS, validateSecurityConfiguration } from "./server/security-hardening.js";
 import { createHealthRequestMonitor, initializeHealthDashboard, recordHealthError, registerHealthDashboardRoutes, startHealthMonitoring } from "./server/health-dashboard.js";
 import { initializeOrganizations, requireOrganizationFeature } from "./server/organizations.js";
 import { registerCreatorRoutes } from "./server/creator.js";
@@ -295,42 +295,21 @@ app.get("/favicon.ico", (request, response) => {
 	response.type("image/png").sendFile(path.join(rootDirectory, "assets", "logo.png.png"), { headers: { "Cache-Control": "public, max-age=86400" } });
 });
 app.use("/site-assets", express.static(path.join(rootDirectory, "public"), { index: false, maxAge: "1d" }));
-app.get(["/confidentialite", "/politique-de-confidentialite", "/privacy"], (request, response) => {
-	response.sendFile(path.join(rootDirectory, "public", "privacy.html"), { headers: { "Cache-Control": "public, max-age=3600" } });
-});
-app.get(["/conditions-utilisation", "/conditions-d-utilisation", "/terms"], (request, response) => {
-	response.sendFile(path.join(rootDirectory, "public", "terms.html"), { headers: { "Cache-Control": "public, max-age=3600" } });
-});
-app.get(["/mentions-legales", "/mentions"], (request, response) => {
-	response.sendFile(path.join(rootDirectory, "public", "mentions.html"), { headers: { "Cache-Control": "public, max-age=3600" } });
-});
-app.get("/logiciel-entreprise-depannage", (request, response) => {
-	response.sendFile(path.join(rootDirectory, "public", "logiciel-entreprise-depannage.html"), { headers: { "Cache-Control": "public, max-age=3600" } });
-});
-app.get("/logiciel-planning-interventions", (request, response) => {
-	response.sendFile(path.join(rootDirectory, "public", "logiciel-planning-interventions.html"), { headers: { "Cache-Control": "public, max-age=3600" } });
-});
-app.get("/logiciel-devis-factures-artisans", (request, response) => {
-	response.sendFile(path.join(rootDirectory, "public", "logiciel-devis-factures-artisans.html"), { headers: { "Cache-Control": "public, max-age=3600" } });
-});
-app.get("/logiciel-gestion-plombier", (request, response) => {
-	response.sendFile(path.join(rootDirectory, "public", "logiciel-gestion-plombier.html"), { headers: { "Cache-Control": "public, max-age=3600" } });
-});
-app.get("/logiciel-maintenance-sav", (request, response) => {
-	response.sendFile(path.join(rootDirectory, "public", "logiciel-maintenance-sav.html"), { headers: { "Cache-Control": "public, max-age=3600" } });
-});
-app.get("/logiciel-gestion-interventions-terrain", (request, response) => {
-	response.sendFile(path.join(rootDirectory, "public", "logiciel-gestion-interventions-terrain.html"), { headers: { "Cache-Control": "public, max-age=3600" } });
-});
-app.get("/application-mobile-techniciens", (request, response) => {
-	response.sendFile(path.join(rootDirectory, "public", "application-mobile-techniciens.html"), { headers: { "Cache-Control": "public, max-age=3600" } });
-});
-app.get("/installer-mobile", (request, response) => {
-	response.sendFile(path.join(rootDirectory, "public", "mobile-installation.html"), { headers: { "Cache-Control": "no-store" } });
-});
-app.get("/logiciel-facturation-electronique-artisans", (request, response) => {
-	response.sendFile(path.join(rootDirectory, "public", "logiciel-facturation-electronique-artisans.html"), { headers: { "Cache-Control": "public, max-age=3600" } });
-});
+function sendPublicPage(response, filename, cacheControl = "public, max-age=3600") {
+	response.sendFile(path.join(rootDirectory, "public", filename), { headers: { ...PUBLIC_PAGE_HEADERS, "Cache-Control": cacheControl } });
+}
+app.get(["/confidentialite", "/politique-de-confidentialite", "/privacy"], (request, response) => sendPublicPage(response, "privacy.html"));
+app.get(["/conditions-utilisation", "/conditions-d-utilisation", "/terms"], (request, response) => sendPublicPage(response, "terms.html"));
+app.get(["/mentions-legales", "/mentions"], (request, response) => sendPublicPage(response, "mentions.html"));
+app.get("/logiciel-entreprise-depannage", (request, response) => sendPublicPage(response, "logiciel-entreprise-depannage.html"));
+app.get("/logiciel-planning-interventions", (request, response) => sendPublicPage(response, "logiciel-planning-interventions.html"));
+app.get("/logiciel-devis-factures-artisans", (request, response) => sendPublicPage(response, "logiciel-devis-factures-artisans.html"));
+app.get("/logiciel-gestion-plombier", (request, response) => sendPublicPage(response, "logiciel-gestion-plombier.html"));
+app.get("/logiciel-maintenance-sav", (request, response) => sendPublicPage(response, "logiciel-maintenance-sav.html"));
+app.get("/logiciel-gestion-interventions-terrain", (request, response) => sendPublicPage(response, "logiciel-gestion-interventions-terrain.html"));
+app.get("/application-mobile-techniciens", (request, response) => sendPublicPage(response, "application-mobile-techniciens.html"));
+app.get("/installer-mobile", (request, response) => sendPublicPage(response, "mobile-installation.html", "no-store"));
+app.get("/logiciel-facturation-electronique-artisans", (request, response) => sendPublicPage(response, "logiciel-facturation-electronique-artisans.html"));
 app.get("/robots.txt", (request, response) => response.sendFile(path.join(rootDirectory, "public", "robots.txt")));
 app.get("/sitemap.xml", (request, response) => response.sendFile(path.join(rootDirectory, "public", "sitemap.xml")));
 app.use("/data", requireAuthentication, requireTechnicalWorkspaceAccess, express.static(path.join(rootDirectory, "data"), { index: false }));
@@ -340,8 +319,8 @@ app.get(["/connexion", "/app", "/index.html"], (request, response) => {
 	response.sendFile(path.join(rootDirectory, "index.html"), { headers: { "Cache-Control": "no-store" } });
 });
 app.get("/", (request, response) => {
-	const page = request.user ? "index.html" : path.join("public", "landing.html");
-	response.sendFile(path.join(rootDirectory, page), { headers: { "Cache-Control": "no-store" } });
+	if (!request.user) return sendPublicPage(response, "landing.html", "no-store");
+	response.sendFile(path.join(rootDirectory, "index.html"), { headers: { "Cache-Control": "no-store" } });
 });
 app.use("/css", express.static(path.join(rootDirectory, "css"), { index: false }));
 app.use("/js", express.static(path.join(rootDirectory, "js"), { index: false }));

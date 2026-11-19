@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
+import vm from "node:vm";
 
 const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 const landing = readFileSync(new URL("../public/landing.html", import.meta.url), "utf8");
@@ -26,7 +27,7 @@ test("la vitrine publique conserve un accès explicite au logiciel et aux pages 
     assert.match(appSource, /app\.get\(\["\/conditions-utilisation"[\s\S]*?terms\.html/);
     assert.match(appSource, /app\.get\(\["\/mentions-legales"[\s\S]*?mentions\.html/);
     assert.match(appSource, /app\.get\(\["\/connexion", "\/app", "\/index\.html"\]/);
-    assert.match(appSource, /request\.user \? "index\.html" : path\.join\("public", "landing\.html"\)/);
+    assert.match(appSource, /if \(!request\.user\) return sendPublicPage\(response, "landing\.html", "no-store"\);\s*response\.sendFile\(path\.join\(rootDirectory, "index\.html"\)/);
     assert.match(appSource, /app\.get\("\/favicon\.ico"/);
     assert.match(appSource, /response\.type\("image\/png"\)\.sendFile/);
     assert.match(landing, /href="\/connexion"/);
@@ -250,8 +251,10 @@ test("Google Tag Manager n’est chargé sur la vitrine qu’après consentement
     const pages = readdirSync(new URL("../public/", import.meta.url)).filter(name => name.endsWith(".html"));
     for (const name of pages) {
         const page = readFileSync(new URL(`../public/${name}`, import.meta.url), "utf8");
-        assert.match(page, /<script src="\/site-assets\/analytics-consent\.js\?v=4" defer><\/script>\s*<\/head>/, name);
+        assert.match(page, /<script src="\/site-assets\/analytics-consent\.js\?v=5" defer><\/script>\s*<\/head>/, name);
+        assert.match(appSource, new RegExp(`sendPublicPage\\(response, "${name.replaceAll(".", "\\.")}"`), `${name} doit garder l’exception COOP de Tag Assistant`);
     }
+    assert.doesNotMatch(appSource, /path\.join\(rootDirectory, "public", "[^"]+\.html"\)/);
     const consentScript = readFileSync(new URL("../public/analytics-consent.js", import.meta.url), "utf8");
     assert.match(consentScript, /GTM_ID = "GTM-P29ZXC9C"/);
     assert.match(consentScript, /googletagmanager\.com\/gtm\.js\?id=\$\{GTM_ID\}/);
@@ -266,4 +269,26 @@ test("Google Tag Manager n’est chargé sur la vitrine qu’après consentement
     assert.match(siteScript, /window\.gtag_report_conversion\?\.\(\)/);
     assert.match(landing, /site-assets\/site\.js\?v=8/);
     assert.match(privacy, /data-cookie-settings/);
+});
+
+test("GTM reçoit l’événement gtm.js de l’extrait officiel avant le chargement du conteneur", () => {
+    const window = {
+        localStorage: { getItem: () => JSON.stringify({ choice: "granted", at: Date.now() }), setItem() {} },
+        location: { hostname: "depannhomepro.com" }
+    };
+    const inserted = [];
+    const document = {
+        readyState: "complete",
+        cookie: "",
+        head: { appendChild: node => inserted.push({ src: node.src, dataLayer: [...(window.dataLayer || [])] }) },
+        createElement: () => ({}),
+        getElementById: () => null,
+        addEventListener() {}
+    };
+    vm.runInNewContext(readFileSync(new URL("../public/analytics-consent.js", import.meta.url), "utf8"), { window, document, navigator: { doNotTrack: "0" } });
+
+    assert.equal(inserted.length, 1);
+    assert.equal(inserted[0].src, "https://www.googletagmanager.com/gtm.js?id=GTM-P29ZXC9C");
+    assert.equal(inserted[0].dataLayer[0].event, "gtm.js");
+    assert.equal(typeof inserted[0].dataLayer[0]["gtm.start"], "number");
 });

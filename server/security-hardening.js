@@ -10,6 +10,10 @@ const EXTERNAL_WRITE_PREFIXES = [
     "/api/webhooks/brevo/inbound"
 ];
 
+// Tag Assistant ouvre la vitrine depuis tagassistant.google.com et dialogue avec elle via window.opener,
+// que COOP same-origin remet à null. L'application authentifiée conserve la politique stricte de Helmet.
+export const PUBLIC_PAGE_HEADERS = Object.freeze({ "Cross-Origin-Opener-Policy": "unsafe-none" });
+
 export function contentSecurityPolicy() {
     const directives = {
         defaultSrc: ["'self'"],

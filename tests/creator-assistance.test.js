@@ -243,7 +243,7 @@ test("PWA versions are synchronized for creator assistance assets", () => {
     assert.match(navigation, /creator\.js\?v=181/);
     assert.match(index, /css\/style\.css\?v=320/);
     assert.match(index, /js\/app\.js\?v=530/);
-    assert.match(serviceWorker, /depann-home-pro-v656/);
+    assert.match(serviceWorker, /depann-home-pro-v657/);
     assert.match(serviceWorker, /css\/style\.css\?v=320/);
     assert.match(serviceWorker, /js\/app\.js\?v=530/);
     assert.match(serviceWorker, /js\/collaboration\.js\?v=14/);

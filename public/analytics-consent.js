@@ -28,13 +28,15 @@
     function loadGoogleTagManager() {
         if (navigator.doNotTrack === "1" || gtmLoaded) return;
         gtmLoaded = true;
+        window.dataLayer = window.dataLayer || [];
+        // Événement de l'extrait officiel GTM : il déclenche les balises « Page View » / « All Pages ».
+        window.dataLayer.push({ "gtm.start": Date.now(), event: "gtm.js" });
+        window.gtag = window.gtag || function gtag() { window.dataLayer.push(arguments); };
+        window.gtag("js", new Date());
         const script = document.createElement("script");
         script.async = true;
         script.src = `https://www.googletagmanager.com/gtm.js?id=${GTM_ID}`;
         document.head.appendChild(script);
-        window.dataLayer = window.dataLayer || [];
-        window.gtag = window.gtag || function gtag() { window.dataLayer.push(arguments); };
-        window.gtag("js", new Date());
     }
 
     function clearGoogleAnalyticsCookies() {
