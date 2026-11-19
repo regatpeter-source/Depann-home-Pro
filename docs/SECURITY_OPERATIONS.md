@@ -27,7 +27,16 @@ Les écritures HTTP navigateur sont refusées lorsque `Origin` ou `Sec-Fetch-Sit
 
 Helmet applique une CSP restrictive : ressources locales par défaut, exceptions explicites pour la cartographie et les balises Google ; scripts inline et objets interdits. Les frames sont limitées à la même origine et aux aperçus `blob:`, tandis que `frame-ancestors 'none'` interdit l’encapsulation de l’application. `style-src 'unsafe-inline'` reste nécessaire aux styles calculés de graphiques, calendriers et éditeur de documents. L’objectif suivant est de remplacer ces styles par classes/variables validées puis de retirer cette exception.
 
-Pour Google Tag, `connect-src` autorise notamment les origines exactes `https://analytics.google.com` et `https://stats.g.doubleclick.net`. L’autorisation `https://*.analytics.google.com` couvre les sous-domaines, mais pas `https://analytics.google.com` lui-même. Ces exceptions de connexion n’autorisent pas de scripts supplémentaires et ne doivent pas être remplacées par une ouverture globale (`*`, `https:` ou `https://*.doubleclick.net`). Après modification de la CSP, redéployer ou redémarrer le serveur, recharger la page et relancer le diagnostic Google Tag.
+Pour Google Tag Manager (mode Aperçu / Tag Assistant), GA4 et Google Ads, la CSP reprend la liste du [guide CSP officiel de Google](https://developers.google.com/tag-platform/security/guides/csp) au lieu d’ajouter les domaines un par un à chaque erreur :
+
+- `script-src` : hôtes Google explicites, sans joker (`www.googletagmanager.com`, `tagmanager.google.com`, `www.googleadservices.com`, `www.google.com`, `googleads.g.doubleclick.net`) ;
+- `style-src` / `font-src` : badge et interface de débogage (`www.googletagmanager.com`, `tagmanager.google.com`, `fonts.googleapis.com`, `fonts.gstatic.com`) ;
+- `img-src` / `connect-src` : mesures et audiences (`*.googletagmanager.com`, `*.google-analytics.com`, `*.google.com`, `*.google.fr`, `*.g.doubleclick.net`, `pagead2.googlesyndication.com`, `www.googleadservices.com`) ;
+- `frame-src` : iframe technique `www.googletagmanager.com`.
+
+CSP n’accepte pas de joker sur le domaine de premier niveau : chaque domaine Google national (`google.fr`, `google.be`, etc.) doit être ajouté explicitement si une audience étrangère le nécessite. Ne jamais remplacer ces exceptions par une ouverture globale (`*`, `https:` ou `https://*.doubleclick.net`), ni ajouter de joker dans `script-src`. Après modification de la CSP, redéployer ou redémarrer le serveur, recharger la page et relancer le diagnostic Google Tag.
+
+Tag Assistant ne peut se connecter que si le conteneur GTM est chargé : sur la vitrine, cela exige d’avoir **accepté** les cookies de mesure et que le navigateur n’envoie pas `Do Not Track`. Les bloqueurs de publicité et le blocage des cookies tiers peuvent aussi empêcher la connexion.
 
 ## TOTP
 

@@ -10,20 +10,25 @@ const EXTERNAL_WRITE_PREFIXES = [
     "/api/webhooks/brevo/inbound"
 ];
 
+// Sources Google Tag Manager (mode Aperçu), GA4 et Google Ads :
+// https://developers.google.com/tag-platform/security/guides/csp
+const GOOGLE_DOMAIN_SOURCES = ["https://*.google.com", "https://*.google.fr"];
+const GOOGLE_MEASUREMENT_SOURCES = ["https://*.googletagmanager.com", "https://*.google-analytics.com", ...GOOGLE_DOMAIN_SOURCES, "https://*.g.doubleclick.net", "https://pagead2.googlesyndication.com", "https://www.googleadservices.com"];
+
 export function contentSecurityPolicy() {
     const directives = {
         defaultSrc: ["'self'"],
         baseUri: ["'self'"],
-        connectSrc: ["'self'", "https://tiles.openfreemap.org", "https://*.google-analytics.com", "https://analytics.google.com", "https://*.analytics.google.com", "https://*.googletagmanager.com", "https://ad.doubleclick.net", "https://stats.g.doubleclick.net", "https://www.google.com"],
-        fontSrc: ["'self'", "data:"],
+        connectSrc: ["'self'", "https://tiles.openfreemap.org", ...GOOGLE_MEASUREMENT_SOURCES, "https://ad.doubleclick.net"],
+        fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
         formAction: ["'self'"],
         frameAncestors: ["'none'"],
-        frameSrc: ["'self'", "blob:"],
-        imgSrc: ["'self'", "data:", "blob:", "https://tiles.openfreemap.org", "https://*.google-analytics.com", "https://*.googletagmanager.com"],
+        frameSrc: ["'self'", "blob:", "https://www.googletagmanager.com"],
+        imgSrc: ["'self'", "data:", "blob:", "https://tiles.openfreemap.org", ...GOOGLE_MEASUREMENT_SOURCES, "https://ssl.gstatic.com", "https://www.gstatic.com"],
         objectSrc: ["'none'"],
-        scriptSrc: ["'self'", "https://www.googletagmanager.com", "https://googleads.g.doubleclick.net"],
+        scriptSrc: ["'self'", "https://www.googletagmanager.com", "https://tagmanager.google.com", "https://www.googleadservices.com", "https://www.google.com", "https://googleads.g.doubleclick.net"],
         scriptSrcAttr: ["'none'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://www.googletagmanager.com", "https://tagmanager.google.com", "https://fonts.googleapis.com"],
         workerSrc: ["'self'", "blob:"]
     };
     if (process.env.NODE_ENV === "production") directives.upgradeInsecureRequests = [];
