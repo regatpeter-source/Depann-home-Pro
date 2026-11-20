@@ -44,6 +44,17 @@ test("an authorized PC can edit a reopened draft alongside its technician", () =
     assert.match(serverSource, /\["draft", "in_correction"\]\.includes\(report\.status\)/);
 });
 
+test("finishing a report on an administrative PC goes straight to proofreading instead of transmitting it", () => {
+    const submitRoute = serverSource.slice(serverSource.indexOf('app.post("/api/technical-reports/:reportId/submit"'), serverSource.indexOf('app.post("/api/technical-reports/:reportId/corrections"'));
+    const sameWorkstation = submitRoute.slice(submitRoute.indexOf("if (canConfirmReportProofreading(request.user?.role, request.user?.deviceType))"), submitRoute.indexOf("administrationNotifications"));
+    assert.match(sameWorkstation, /return response\.json\(\{ proofreadOnSameWorkstation: true \}\)/);
+    assert.doesNotMatch(sameWorkstation, /releaseLock/);
+    const submit = editorSource.slice(editorSource.indexOf("async function submitReport"), editorSource.indexOf("async function validateReport"));
+    assert.match(submit, /const proofreadHere = canProofreadReport\(\)/);
+    assert.match(submit, /passer directement à la correction/);
+    assert.match(submit, /result\.data\?\.proofreadOnSameWorkstation && editable\(\)\) openReportProofreading\(shell\)/);
+});
+
 test("proofreading remains current when only editor navigation changes", () => {
     const value = report();
     const fingerprint = reportProofreadingFingerprint(value);

@@ -237,6 +237,10 @@ export function registerTechnicalReportRoutes(app, requireAuthentication) {
         const report = await findReport(getAccountOwnerId(request), positiveId(request.params.reportId), request); if (!report) return response.status(404).json({ message: "Rapport introuvable." }); if (!canEdit(report, request)) return response.status(409).json({ message: "Le rapport est verrouillé." }); if (!await enforceReportLock(request, response, report.id)) return;
         if (!["draft", "in_correction"].includes(report.status)) return response.status(409).json({ message: "Ce rapport a déjà été terminé." });
         await getPool().query("UPDATE depannhome_technical_reports SET status='submitted', submitted_at=NOW(), updated_at=NOW() WHERE id=$1 AND owner_id=$2", [report.id, getAccountOwnerId(request)]);
+        if (canConfirmReportProofreading(request.user?.role, request.user?.deviceType)) {
+            await publishEvent(request, reportTarget(report.id), "report_submitted", { proofreadOnSameWorkstation: true });
+            return response.json({ proofreadOnSameWorkstation: true });
+        }
         await publishEvent(request, reportTarget(report.id), "report_submitted", {}, await administrationNotifications(getAccountOwnerId(request), request.user.sub, "Rapport terminé à corriger", `Le rapport #${report.id} est terminé et attend sa correction sur un poste administratif.`));
         await releaseLock(request, "technical_report", String(report.id), "lock_released_after_submission"); response.status(204).end();
     }));

@@ -1,7 +1,7 @@
 import { APP_VERSION, ROUTES, DEFAULT_SETTINGS, FONT_OPTIONS, LANG_OPTIONS, MENU_ACCESS } from "./config.js?v=140";
-import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=251";
+import { createCalendarEventForClient, renderCalendar, renderCalendarOverview } from "./calendar.js?v=252";
 import { openCreatorPartnerRequest, openCreatorRequestNotification, renderCreatorConsole } from "./creator.js?v=181";
-import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=228";
+import { createBillingDocumentForClient, renderBilling, synchronizeBillingDocuments, viewBillingDocument } from "./billing.js?v=229";
 import { renderAccounting } from "./accounting.js?v=39";
 import { renderPurchases } from "./purchases.js?v=136";
 import { renderBusinessSuite } from "./business-suite.js?v=10";
@@ -11,12 +11,12 @@ import { renderMobileInstallationQr, showMobileInstallationQr } from "./mobile-i
 import { canAccessReminderDashboard, mountReminderDashboard, reminderDashboardMarkup } from "./reminder-dashboard.js?v=2";
 import { renderGroupActivation, renderGroupWorkspace } from "./groups.js?v=10";
 import { renderHistoryAndJournals } from "./history.js?v=2";
-import { renderPartnerMissions } from "./partner-missions.js?v=105";
+import { renderPartnerMissions } from "./partner-missions.js?v=106";
 import { renderPartnerSandbox } from "./partner-sandbox.js?v=4";
-import { renderPartnerConnections } from "./partner-connections.js?v=64";
+import { renderPartnerConnections } from "./partner-connections.js?v=65";
 import { renderCompanyEmailWorkspace, renderPartnerEmailSettings } from "./partner-email-settings.js?v=29";
 import { renderDataImportTool } from "./data-imports.js?v=5";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=73";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=74";
 import { getFirstUnreadClientId, refreshClientMessageAlert, refreshVisibleClientMessages } from "./messages.js?v=107";
 import { getSearchableClients, refreshClientDirectoryAfterSynchronization, renderClients } from "./clients.js?v=188";
 import { initializeDesktopWorkspace } from "./desktop-workspace.js?v=6";
