@@ -49,7 +49,7 @@ test("la CSP HTTP autorise les ressources Google signalées sans ouverture globa
     }));
     const connectSources = directives.get("connect-src");
     assert.ok(connectSources);
-    for (const origin of ["https://analytics.google.com", "https://stats.g.doubleclick.net"]) {
+    for (const origin of ["https://analytics.google.com", "https://stats.g.doubleclick.net", "https://www.googleadservices.com"]) {
         assert.ok(connectSources.includes(origin), `${origin} doit être autorisé dans connect-src`);
         assert.ok(!directives.get("script-src").includes(origin), `${origin} ne doit pas autoriser de scripts`);
     }

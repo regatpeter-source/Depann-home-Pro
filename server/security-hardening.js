@@ -18,7 +18,7 @@ export function contentSecurityPolicy() {
     const directives = {
         defaultSrc: ["'self'"],
         baseUri: ["'self'"],
-        connectSrc: ["'self'", "https://tiles.openfreemap.org", "https://*.google-analytics.com", "https://analytics.google.com", "https://*.analytics.google.com", "https://*.googletagmanager.com", "https://ad.doubleclick.net", "https://stats.g.doubleclick.net", "https://www.google.com"],
+        connectSrc: ["'self'", "https://tiles.openfreemap.org", "https://*.google-analytics.com", "https://analytics.google.com", "https://*.analytics.google.com", "https://*.googletagmanager.com", "https://ad.doubleclick.net", "https://stats.g.doubleclick.net", "https://www.google.com", "https://www.googleadservices.com"],
         fontSrc: ["'self'", "data:"],
         formAction: ["'self'"],
         frameAncestors: ["'none'"],
