@@ -6785,7 +6785,7 @@ footer{
 ========================== */
 body.desktop-device{
     --desktop-sidebar-width:216px;
-    --desktop-header-height:98px;
+    --desktop-header-height:106px;
     --desktop-radius:7px;
     --primary:#2f607d;
     --secondary:#4f806f;
@@ -6844,14 +6844,14 @@ body.desktop-device .desktop-greeting:not([hidden]){
     align-items:center;
     justify-content:center;
     gap:.4em;
-    height:34px;
+    height:42px;
     min-width:0;
     margin:-7px -16px 7px;
     padding:0 16px;
     overflow:hidden;
     background:#0A5C36;
     color:#fff;
-    font-size:16px;
+    font-size:clamp(20px,1.7vw,24px);
     font-weight:600;
     line-height:1.2;
     white-space:nowrap;
