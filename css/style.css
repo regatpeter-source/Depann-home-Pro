@@ -154,6 +154,10 @@ textarea{
     display:none;
 }
 
+.app-titlebar{
+    display:none;
+}
+
 .header-content{
     max-width:1200px;
     margin:auto;
@@ -6864,6 +6868,57 @@ body.desktop-device .desktop-greeting-company:not([hidden]){
     align-items:baseline;
     gap:.4em;
     min-width:0;
+}
+
+/* Application PC installée : la barre de titre verte du système est remplacée par la nôtre une fois
+   « Masquer la barre de titre » activé ; les marges latérales symétriques gardent le texte centré
+   dans la fenêtre sans passer sous les boutons de fenêtre. */
+@media screen and (display-mode: window-controls-overlay){
+    body{
+        --app-titlebar-height:env(titlebar-area-height,33px);
+        --app-titlebar-inset:max(env(titlebar-area-x,0px),calc(100vw - env(titlebar-area-x,0px) - env(titlebar-area-width,100vw)));
+        padding-top:var(--app-titlebar-height);
+    }
+
+    .app-titlebar,
+    body.desktop-device .desktop-greeting:not([hidden]){
+        position:fixed;
+        top:env(titlebar-area-y,0px);
+        right:0;
+        left:0;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        gap:.4em;
+        height:var(--app-titlebar-height);
+        padding:0 var(--app-titlebar-inset);
+        overflow:hidden;
+        background:#0A5C36;
+        color:#fff;
+        font-size:14px;
+        font-weight:600;
+        line-height:1;
+        white-space:nowrap;
+        user-select:none;
+        -webkit-app-region:drag;
+        app-region:drag;
+    }
+
+    .app-titlebar{
+        z-index:19;
+    }
+
+    body.desktop-device{
+        --desktop-header-height:64px;
+    }
+
+    body.desktop-device #authRoot{
+        height:calc(100vh - var(--app-titlebar-height));
+    }
+
+    .auth-page{
+        min-height:calc(100vh - var(--app-titlebar-height));
+    }
 }
 
 body.desktop-device .header-content{

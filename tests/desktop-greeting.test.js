@@ -118,3 +118,19 @@ test("le bandeau fixe suit la session et recharge avant un changement d’entrep
     assert.match(navigation, /synchronizeActiveCompanyIdentity\(session\.user\)/);
     assert.match(navigation, /updateDesktopGreeting\(user\)/);
 });
+
+test("l’application PC installée peut centrer le bandeau dans la barre de titre verte", () => {
+    const read = path => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+    const manifest = JSON.parse(read("manifest.json"));
+    const html = read("index.html");
+    const style = read("css/style.css");
+    const overlay = style.slice(style.indexOf("@media screen and (display-mode: window-controls-overlay)"));
+    assert.equal(manifest.display, "standalone");
+    assert.deepEqual(manifest.display_override, ["window-controls-overlay"]);
+    assert.match(html, /<body class="auth-pending">\s*<div class="app-titlebar" aria-hidden="true" data-no-translate>Depann'Home Pro<\/div>\s*<div id="authRoot">/);
+    assert.match(style, /\.app-titlebar\{\s*display:none/);
+    assert.match(overlay, /\.app-titlebar,\s*body\.desktop-device \.desktop-greeting:not\(\[hidden\]\)\{[\s\S]*?position:fixed;[\s\S]*?justify-content:center;[\s\S]*?padding:0 var\(--app-titlebar-inset\);[\s\S]*?background:#0A5C36;[\s\S]*?app-region:drag;/);
+    assert.match(overlay, /--app-titlebar-inset:max\(env\(titlebar-area-x,0px\),calc\(100vw - env\(titlebar-area-x,0px\) - env\(titlebar-area-width,100vw\)\)\)/);
+    assert.match(overlay, /body\.desktop-device\{\s*--desktop-header-height:64px;/);
+    assert.match(overlay, /body\.desktop-device #authRoot\{\s*height:calc\(100vh - var\(--app-titlebar-height\)\);/);
+});

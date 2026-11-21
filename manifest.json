@@ -4,6 +4,7 @@
   "description": "Assistant professionnel de dépannage Somfy, FAAC, Nice, Bubendorff et CAME.",
   "start_url": "/connexion",
   "display": "standalone",
+  "display_override": ["window-controls-overlay"],
   "background_color": "#edf2f7",
   "theme_color": "#0A5C36",
   "icons": [
