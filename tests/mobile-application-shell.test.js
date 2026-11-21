@@ -55,6 +55,9 @@ test("le Poste Admin Mobile affiche ses fonctions opérationnelles et le ticket 
     assert.deepEqual(routeAccess, [ROUTES.home, ROUTES.calendar, ROUTES.clients, ROUTES.library, ROUTES.operationsMap, ROUTES.purchases, ROUTES.settings, ROUTES.support].sort());
     assert.match(navigation, /else if \(isCommercialMobile\(\)\) openCalendar\(\)/);
     assert.match(navigation, /else if \(isMobileDeviceContext\(\)\) openHome\(\)/);
+    const openHomeSource = navigation.slice(navigation.indexOf("function openHome()"), navigation.indexOf("function openCalendar()"));
+    assert.doesNotMatch(openHomeSource, /isMobileAdministrator\(\)|openCalendar\(\)/);
+    assert.match(navigation, /const mobileRevenueEnabled = isMobileDeviceContext\(\) && \["mobile_admin", "team_lead", "technician"\]\.includes/);
     assert.match(styles, /mobile_admin"\]\.mobile-device \.search-section\{display:none;\}/);
     assert.match(styles, /mobile_admin"\]\.mobile-device footer \.nav-button:not\(\[data-nav="home"\]\):not\(\[data-nav="calendar"\]\):not\(\.mobile-workspace-menu-button\)\{display:none;\}/);
 });

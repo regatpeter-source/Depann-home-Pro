@@ -869,10 +869,6 @@ function menuRoute(menu) {
 }
 
 function openHome() {
-    if (isMobileAdministrator()) {
-        openCalendar();
-        return;
-    }
     if (isAccountant()) {
         if (canAccessRoute(ROUTES.billing)) renderBilling();
         else if (canAccessRoute(ROUTES.accounting)) renderAccounting();

@@ -57,7 +57,7 @@ Configurer les coûts horaires chargés, puis affecter si nécessaire les achats
 
 ## Rappels internes du tableau de bord
 
-Les responsables `admin`, `pc_standard` et `mobile_admin` des interfaces Standard et Groupe disposent du panneau **Rappels internes**. Il n’est pas accessible sur l’interface Partenaire ni pendant une prise en main Support. Sur PC, il se trouve à l’**Accueil** ; sur le poste Admin Mobile, ouvrir **Menu → Interventions → Rappels internes**. L’accueil mobile conserve son accès habituel au planning.
+Les responsables `admin`, `pc_standard` et `mobile_admin` des interfaces Standard et Groupe disposent du panneau **Rappels internes**. Il n’est pas accessible sur l’interface Partenaire ni pendant une prise en main Support. Sur PC comme sur le poste Admin Mobile, il se trouve à l’**Accueil** ; sur le poste Admin Mobile, **Menu → Interventions → Rappels internes** y mène directement. Le bouton **Interventions** du poste Admin Mobile ouvre le planning.
 
 Aucune règle n’est créée automatiquement. Dans **Configurer les rappels**, activer les catégories souhaitées :
 

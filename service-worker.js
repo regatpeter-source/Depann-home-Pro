@@ -1,6 +1,6 @@
 importScripts("./js/offline-replay.js?v=1");
 
-const CACHE_NAME = "depann-home-pro-v660";
+const CACHE_NAME = "depann-home-pro-v661";
 const offlineReplay = globalThis.DepannHomeOfflineReplay;
 const ASSETS = [
     "./",
@@ -26,6 +26,7 @@ const ASSETS = [
     "./js/app.js?v=531",
     "./js/app.js?v=532",
     "./js/app.js?v=533",
+    "./js/app.js?v=534",
     "./js/desktop-greeting.js?v=1",
     "./js/session-context.js?v=1",
     "./js/mobile-installation-qr.js?v=1",
@@ -153,6 +154,7 @@ const ASSETS = [
     "./js/navigation.js?v=553",
     "./js/navigation.js?v=554",
     "./js/navigation.js?v=555",
+    "./js/navigation.js?v=556",
     "./js/business-suite.js?v=5",
     "./js/business-suite.js?v=6",
     "./js/business-suite.js?v=7",
