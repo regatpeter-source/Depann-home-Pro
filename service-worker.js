@@ -1,6 +1,6 @@
 importScripts("./js/offline-replay.js?v=1");
 
-const CACHE_NAME = "depann-home-pro-v665";
+const CACHE_NAME = "depann-home-pro-v666";
 const offlineReplay = globalThis.DepannHomeOfflineReplay;
 const ASSETS = [
     "./",
@@ -13,6 +13,7 @@ const ASSETS = [
     "./css/style.css?v=321",
     "./css/style.css?v=322",
     "./css/style.css?v=323",
+    "./css/style.css?v=324",
     "./vendor/maplibre/maplibre-gl.css?v=6.11.2",
     "./css/partner-dialogue.css?v=8",
     "./css/report-editor.css?v=9",

@@ -106,8 +106,8 @@ test("le bandeau fixe suit la session et recharge avant un changement d’entrep
     assert.match(html, /id="desktopGreetingName" data-no-translate/);
     assert.match(html, /id="desktopGreetingCompany" data-no-translate/);
     assert.match(style, /\.desktop-greeting\{\s*display:none/);
-    assert.match(style, /body\.desktop-device \.desktop-greeting:not\(\[hidden\]\)\{[\s\S]*?justify-content:center;[\s\S]*?margin:-7px -16px 7px;[\s\S]*?background:#0A5C36;\s*color:#fff;\s*font-size:clamp\(20px,1\.7vw,24px\);/);
-    assert.match(style, /--desktop-header-height:106px/);
+    assert.match(style, /body\.desktop-device \.desktop-greeting:not\(\[hidden\]\)\{[\s\S]*?justify-content:center;[\s\S]*?height:32px;[\s\S]*?margin:-7px -16px 7px;[\s\S]*?background:#0A5C36;\s*color:#fff;\s*font-size:clamp\(22px,2vw,28px\);[\s\S]*?letter-spacing:\.06em;/);
+    assert.match(style, /--desktop-header-height:96px/);
     assert.match(style, /body\.desktop-device #authRoot\{[\s\S]*grid-template-rows:var\(--desktop-header-height\)/);
     assert.match(style, /body\.desktop-device\[data-support-control="true"\] #authRoot\{[\s\S]*?height:auto/);
     assert.match(style, /body\.desktop-device \.user-session\{[\s\S]*?min-width:0/);

@@ -56,9 +56,9 @@ test("Gammes and Library never appear in the PC software", () => {
 });
 
 test("desktop stylesheet cache versions remain synchronized", () => {
-    assert.match(index, /css\/style\.css\?v=323/);
+    assert.match(index, /css\/style\.css\?v=324/);
     assert.match(index, /js\/app\.js\?v=535/);
-    assert.match(serviceWorker, /css\/style\.css\?v=323/);
+    assert.match(serviceWorker, /css\/style\.css\?v=324/);
     assert.match(serviceWorker, /js\/app\.js\?v=535/);
     assert.match(serviceWorker, /js\/clients\.js\?v=189/);
     assert.match(serviceWorker, /js\/client-sync\.js\?v=133/);
@@ -67,5 +67,5 @@ test("desktop stylesheet cache versions remain synchronized", () => {
     assert.match(serviceWorker, /js\/library\.js\?v=124/);
     assert.match(serviceWorker, /js\/creator\.js\?v=181/);
     assert.match(serviceWorker, /js\/i18n\.js\?v=6/);
-    assert.match(serviceWorker, /depann-home-pro-v665/);
+    assert.match(serviceWorker, /depann-home-pro-v666/);
 });
