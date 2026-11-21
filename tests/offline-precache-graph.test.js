@@ -32,7 +32,7 @@ test("le cache hors ligne contient les versions exactes des modules accessibles 
     const businessSuiteModules = [...seen].filter(url => new URL(url).pathname.endsWith("/js/business-suite.js"));
     assert.deepEqual(businessSuiteModules, [new URL("js/business-suite.js?v=10", root).href]);
     const clientsModules = [...seen].filter(url => new URL(url).pathname.endsWith("/js/clients.js"));
-    assert.deepEqual(clientsModules, [new URL("js/clients.js?v=188", root).href]);
+    assert.deepEqual(clientsModules, [new URL("js/clients.js?v=189", root).href]);
     const workspaceModules = [...seen].filter(url => new URL(url).pathname.endsWith("/js/desktop-workspace.js"));
     assert.deepEqual(workspaceModules, [new URL("js/desktop-workspace.js?v=6", root).href]);
 });

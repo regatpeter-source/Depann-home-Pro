@@ -1,5 +1,5 @@
 import { getOfflineQueueStatus, retryOfflineQueue } from "./offline-sync.js?v=4";
-import { synchronizeClients } from "./client-sync.js?v=132";
+import { synchronizeClients } from "./client-sync.js?v=133";
 
 function localDate(date) {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;

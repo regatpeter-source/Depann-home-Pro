@@ -6,7 +6,7 @@ import { getAccountOwnerId } from "./auth.js";
 import { sendDocumentEmail } from "./email.js";
 import { clientLifecycleDecision, normalizeClientStatus } from "./client-lifecycle.js";
 import { openClientEventStream, publishClientChange } from "./client-events.js";
-import { canEditAssignedClients, hasAdministrativeClientAssignment, isDedicatedMobileSession } from "./mobile-client-access.js";
+import { canEditAssignedClients, hasAdministrativeClientAssignment, hasAssignedClientScope, isDedicatedMobileSession } from "./mobile-client-access.js";
 
 const MAX_CLIENT_PAYLOAD_SIZE = 20 * 1024 * 1024;
 const CLIENT_ID_PATTERN = /^client-[a-zA-Z0-9-]+$/;
@@ -82,7 +82,7 @@ export async function initializeClients() {
 }
 
 export async function listClientsForOwner(ownerId, sinceParameter = "", user = null) {
-    const restrictedMobile = isDedicatedMobileSession(user);
+    const restrictedMobile = hasAssignedClientScope(user);
     const since = normalizeClientSynchronizationCursor(sinceParameter, user);
     const database = getPool();
     await reconcilePartnerMissionClients(database, ownerId);
@@ -115,7 +115,7 @@ export async function listClientsForOwner(ownerId, sinceParameter = "", user = n
 }
 
 export function normalizeClientSynchronizationCursor(sinceParameter = "", user = null) {
-    const effectiveSinceParameter = isDedicatedMobileSession(user) ? "" : String(sinceParameter || "");
+    const effectiveSinceParameter = hasAssignedClientScope(user) ? "" : String(sinceParameter || "");
     const since = effectiveSinceParameter ? validDate(effectiveSinceParameter) : "";
     if (effectiveSinceParameter && !since) throw clientError(400, "Curseur de synchronisation invalide.");
     return since;
@@ -351,7 +351,7 @@ export function registerClientRoutes(app, requireAuthentication) {
             const existingClient = existing.rows[0]?.client;
             const deletedAttachmentIds = mergeDeletedAttachmentIds(existingClient?.deletedAttachmentIds, submittedClient.deletedAttachmentIds);
             const notesSource = submittedClient.notesSource === "email_extractor" && submittedClient.notes === existing.rows[0]?.client?.notes ? "email_extractor" : "";
-            const client = isDedicatedMobileSession(request.user)
+            const client = hasAssignedClientScope(request.user)
                 ? mergeAssignedMobileClient(existingClient, submittedClient, request.user, now)
                 : {
                     ...submittedClient,
@@ -679,7 +679,7 @@ export function clientUploadErrorHandler(error, request, response, next) {
 }
 
 function requireClientWriteAccess(request, response, next) {
-    if (isDedicatedMobileSession(request.user)) {
+    if (hasAssignedClientScope(request.user)) {
         if (canEditAssignedClients(request.user)) return next();
         return response.status(403).json({ message: "Ce poste mobile peut consulter ses clients attribués, sans modifier leur fiche." });
     }
@@ -690,7 +690,7 @@ function requireClientWriteAccess(request, response, next) {
 }
 
 async function requireAssignedMobileClientAccess(request, response, next) {
-    if (!isDedicatedMobileSession(request.user)) return next();
+    if (!hasAssignedClientScope(request.user)) return next();
     const clientId = String(request.params.clientId || "");
     if (!CLIENT_ID_PATTERN.test(clientId)) return response.status(400).json({ message: "Identifiant client invalide." });
     if (!await hasAdministrativeClientAssignment(getPool(), getAccountOwnerId(request), clientId, request.user.sub)) {

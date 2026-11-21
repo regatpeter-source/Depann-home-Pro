@@ -1,8 +1,8 @@
 import { initializeAuthentication, restoreApplicationShell, signOut } from "./auth.js?v=131";
-import { initializeClientSynchronization } from "./client-sync.js?v=132";
+import { initializeClientSynchronization } from "./client-sync.js?v=133";
 import { initializeCollaboration } from "./collaboration.js?v=14";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication, synchronizeActiveCompanyIdentity } from "./navigation.js?v=553";
+import { initializeNavigation, refreshApplication, synchronizeActiveCompanyIdentity } from "./navigation.js?v=554";
 import { updateDesktopGreeting } from "./desktop-greeting.js?v=1";
 import { getActiveCompanyId, getSessionDisplayName, sessionAccessIdentity } from "./session-context.js?v=1";
 import { renderError } from "./ui.js?v=44";
@@ -11,7 +11,7 @@ import { FONT_OPTIONS } from "./config.js?v=140";
 import { installClientSessionGuard, onAuthenticationRequired, onClientSessionReplaced } from "./client-session.js?v=12";
 import { initializeInterfaceLanguage } from "./i18n.js?v=8";
 import { stopTerrainLocationSharing } from "./operations-map.js?v=10";
-import { initializeOfflineTools } from "./offline-tools.js?v=1";
+import { initializeOfflineTools } from "./offline-tools.js?v=2";
 
 let applicationStarted = false;
 let sessionReplacementHandled = false;

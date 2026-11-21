@@ -10,7 +10,7 @@ import { buildQuitusCustomModel, renderActiveCustomTemplate } from "./document-t
 import { validateAssignedCompanyMembers } from "./member-assignment.js";
 import { strictDateOnly } from "./date-validation.js";
 import { publishClientChange } from "./client-events.js";
-import { hasAdministrativeClientAssignment, isDedicatedMobileSession } from "./mobile-client-access.js";
+import { hasAdministrativeClientAssignment, hasAssignedClientScope, isDedicatedMobileSession } from "./mobile-client-access.js";
 import { offlineIdempotent } from "./offline-idempotency.js";
 
 const EVENT_COLORS = new Set(["blue", "green", "orange", "red", "purple", "gray"]);
@@ -303,7 +303,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
         const clientId = String(request.params.clientId || "");
         if (!/^client-[a-zA-Z0-9-]+$/.test(clientId)) return response.status(400).json({ message: "Client invalide." });
         const ownerId = getAccountOwnerId(request);
-        if (isDedicatedMobileSession(request.user) && !await hasAdministrativeClientAssignment(getPool(), ownerId, clientId, request.user.sub)) {
+        if (hasAssignedClientScope(request.user) && !await hasAdministrativeClientAssignment(getPool(), ownerId, clientId, request.user.sub)) {
             return response.status(404).json({ message: "Dossier client introuvable ou non attribué à ce poste." });
         }
         const clientResult = await getPool().query("SELECT 1 FROM depannhome_clients WHERE owner_id = $1 AND client_id = $2", [ownerId, clientId]);

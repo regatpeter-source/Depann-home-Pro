@@ -1,5 +1,5 @@
 import { ROUTES } from "./config.js?v=116";
-import { addClientActivity, getLocalClients, removeLocalClient, saveLocalClient, scheduleClientSynchronization, synchronizeClients } from "./client-sync.js?v=132";
+import { addClientActivity, getLocalClients, removeLocalClient, saveLocalClient, scheduleClientSynchronization, synchronizeClients } from "./client-sync.js?v=133";
 import { renderClientMessages } from "./messages.js?v=107";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
@@ -406,7 +406,7 @@ function renderClientForm(client, options = {}) {
                 </label>
             </div>
 
-            <section class="client-files-zone" ${isDedicatedMobileClientSession() ? "hidden" : ""}>
+            <section class="client-files-zone" ${hasAssignedClientScope() ? "hidden" : ""}>
                 <div class="form-heading">
                     <div>
                         <p class="eyebrow">Dossier client</p>
@@ -1121,7 +1121,7 @@ async function permanentlyDeleteClient(clientId, dialog) {
 }
 
 function isClientReadOnly() {
-    if (isDedicatedMobileClientSession()) return document.body.dataset.canManageCalendar !== "true";
+    if (hasAssignedClientScope()) return document.body.dataset.canManageCalendar !== "true";
     return document.body.dataset.role === "technician";
 }
 
@@ -1129,8 +1129,13 @@ function isDedicatedMobileClientSession() {
     return document.body.dataset.deviceType === "mobile" && ["mobile_admin", "team_lead", "technician"].includes(document.body.dataset.role);
 }
 
+// Le Poste Admin Mobile gère tous les clients ; chefs d’équipe et techniciens mobiles restent limités à leurs clients attribués.
+function hasAssignedClientScope() {
+    return isDedicatedMobileClientSession() && document.body.dataset.role !== "mobile_admin";
+}
+
 function canCreateClientRecords() {
-    return !isDedicatedMobileClientSession() && !isClientReadOnly();
+    return !hasAssignedClientScope() && !isClientReadOnly();
 }
 
 function canManageClientLifecycle() {
@@ -1140,8 +1145,8 @@ function canManageClientLifecycle() {
 function renderClientDetailActions(client, readOnly) {
     if (readOnly) return "";
     if (client.clientStatus === "archived") return canManageClientLifecycle() ? '<button type="button" class="secondary-button report-primary-action" id="reactivateSelectedClient">Réactiver le client</button>' : "";
-    if (isDedicatedMobileClientSession()) return '<button type="button" class="secondary-button" id="createClientAppointment">+ Créer un rendez-vous</button><button type="button" class="secondary-button" id="editSelectedClient">Modifier les coordonnées</button>';
-    return '<button type="button" class="secondary-button" id="createClientAppointment">+ Créer un rendez-vous</button><button type="button" class="secondary-button" id="createClientQuote">+ Créer un devis</button><button type="button" class="secondary-button" id="createClientInvoice">+ Créer une facture</button><button type="button" class="secondary-button" id="editSelectedClient">Modifier</button><button type="button" class="secondary-button danger-button" id="deleteSelectedClient">Supprimer le client</button>';
+    if (hasAssignedClientScope()) return '<button type="button" class="secondary-button" id="createClientAppointment">+ Créer un rendez-vous</button><button type="button" class="secondary-button" id="editSelectedClient">Modifier les coordonnées</button>';
+    return `<button type="button" class="secondary-button" id="createClientAppointment">+ Créer un rendez-vous</button><button type="button" class="secondary-button" id="createClientQuote">+ Créer un devis</button><button type="button" class="secondary-button" id="createClientInvoice">+ Créer une facture</button><button type="button" class="secondary-button" id="editSelectedClient">Modifier</button>${canManageClientLifecycle() ? '<button type="button" class="secondary-button danger-button" id="deleteSelectedClient">Supprimer le client</button>' : ""}`;
 }
 
 function getClientById(id) {

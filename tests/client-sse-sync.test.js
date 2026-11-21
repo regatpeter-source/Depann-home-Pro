@@ -80,9 +80,10 @@ test("un curseur de synchronisation client invalide produit une erreur HTTP cont
     );
 });
 
-test("un poste mobile dédié ignore son ancien curseur sans générer de faux 400", () => {
+test("un poste mobile cloisonné ignore son ancien curseur sans générer de faux 400", () => {
     assert.equal(normalizeClientSynchronizationCursor("2026-09-24T10:00:00.000Z", { role: "technician", deviceType: "mobile" }), "");
-    assert.equal(normalizeClientSynchronizationCursor("ancienne-valeur-invalide", { role: "mobile_admin", deviceType: "mobile" }), "");
+    assert.equal(normalizeClientSynchronizationCursor("ancienne-valeur-invalide", { role: "team_lead", deviceType: "mobile" }), "");
+    assert.equal(normalizeClientSynchronizationCursor("2026-09-24T10:00:00.000Z", { role: "mobile_admin", deviceType: "mobile" }), "2026-09-24T10:00:00.000Z");
     assert.equal(normalizeClientSynchronizationCursor("2026-09-24T10:00:00.000Z", { role: "admin", deviceType: "desktop" }), "2026-09-24T10:00:00.000Z");
 });
 

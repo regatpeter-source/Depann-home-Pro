@@ -73,7 +73,7 @@ export function saveLocalClient(client) {
     if (!canWriteClients()) return null;
     const clients = getLocalClients();
     const existing = clients.find(item => item.id === client.id);
-    if (isDedicatedMobileClientSession() && !existing) return null;
+    if (hasAssignedClientScope() && !existing) return null;
     const nextClient = normalizeClient({
         ...client,
         createdAt: existing?.createdAt || client.createdAt || new Date().toISOString(),
@@ -398,12 +398,16 @@ function getAccountId() {
 }
 
 function canWriteClients() {
-    if (isDedicatedMobileClientSession()) return document.body.dataset.canManageCalendar === "true";
+    if (hasAssignedClientScope()) return document.body.dataset.canManageCalendar === "true";
     return ["admin", "mobile_admin"].includes(document.body.dataset.role);
 }
 
 function isDedicatedMobileClientSession() {
     return document.body.dataset.deviceType === "mobile" && ["mobile_admin", "team_lead", "technician"].includes(document.body.dataset.role);
+}
+
+function hasAssignedClientScope() {
+    return isDedicatedMobileClientSession() && document.body.dataset.role !== "mobile_admin";
 }
 
 function isAccountant() {
@@ -441,7 +445,9 @@ function writeSynchronizationCursor(cursor) {
 function getSynchronizationCursorKey() {
     const accountId = getAccountId();
     if (!accountId) throw new Error("Compte non initialisé.");
-    return `${CURSOR_KEY_PREFIX}${accountId}`;
+    // L’ancien curseur du Poste Admin Mobile ne couvrait que ses clients attribués : un curseur dédié impose une reprise complète.
+    const scope = isDedicatedMobileClientSession() && !hasAssignedClientScope() ? ":all-clients" : "";
+    return `${CURSOR_KEY_PREFIX}${accountId}${scope}`;
 }
 
 function getClientSynchronizationUrl(forceFull = false) {

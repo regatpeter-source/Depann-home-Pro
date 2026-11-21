@@ -33,7 +33,7 @@ test("la page web restaure le dernier contexte mobile et précharge ses ressourc
     assert.match(auth, /OFFLINE_MOBILE_SESSION_KEY/);
     assert.match(auth, /session\.networkError && navigator\.onLine === false/);
     assert.match(worker, /\.\/js\/offline-sync\.js\?v=4/);
-    assert.match(worker, /\.\/js\/offline-tools\.js\?v=1/);
+    assert.match(worker, /\.\/js\/offline-tools\.js\?v=2/);
     assert.match(worker, /\.\/js\/offline-replay\.js\?v=1/);
     assert.match(worker, /\.\/data\/database\.json/);
     assert.match(worker, /depannhome-offline-sync/);

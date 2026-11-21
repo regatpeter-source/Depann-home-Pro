@@ -4,6 +4,11 @@ export function isDedicatedMobileSession(user) {
     return user?.deviceType === "mobile" && DEDICATED_MOBILE_ROLES.has(user?.role);
 }
 
+// Le Poste Admin Mobile gère tout le portefeuille client ; chefs d’équipe et techniciens mobiles restent cloisonnés.
+export function hasAssignedClientScope(user) {
+    return isDedicatedMobileSession(user) && user?.role !== "mobile_admin";
+}
+
 export function canEditAssignedClients(user) {
     return isDedicatedMobileSession(user) && user?.canManageCalendar === true;
 }
