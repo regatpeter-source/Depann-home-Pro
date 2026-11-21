@@ -310,6 +310,7 @@ function captureApplicationView(route, title) {
         return { settingsSection, templateType };
     }
     if (route === ROUTES.calendar && title === "Retrouver une intervention") return { workspace: "intervention-search" };
+    if (route === ROUTES.calendar && title === "Rappels internes") return { workspace: "reminders" };
     if (route === ROUTES.accounting) return { accountingSection: document.querySelector("[data-accounting-section].active")?.dataset.accountingSection || "dashboard" };
     if (route === ROUTES.billing && document.querySelector('[data-suite-view="profitability"]')) return { billingWorkspace: "profitability", selectedEventId: document.querySelector("[data-profit-event]")?.value || document.querySelector('[data-suite-view="profitability"]')?.dataset.suiteSelectedEvent || "" };
     if (route === ROUTES.businessSuite) return {
@@ -354,7 +355,7 @@ function inferApplicationRoute(title) {
     if (normalizedTitle.startsWith("sandbox")) return ROUTES.partnerSandbox;
     if (normalizedTitle.startsWith("rapport")) return ROUTES.technicalReports;
     if (normalizedTitle.startsWith("carte des interventions")) return ROUTES.operationsMap;
-    if (/^(planning|intervention|retrouver une intervention)/.test(normalizedTitle)) return ROUTES.calendar;
+    if (/^(planning|intervention|retrouver une intervention|rappels internes)/.test(normalizedTitle)) return ROUTES.calendar;
     if (normalizedTitle.startsWith("bibliotheque")) return ROUTES.library;
     if (normalizedTitle.startsWith("signaler un probleme")) return ROUTES.support;
     if (normalizedTitle.startsWith("parametre") || normalizedTitle.startsWith("modele de")) return ROUTES.settings;
@@ -368,6 +369,7 @@ function restoreApplicationRoute(entry) {
     const route = typeof entry === "string" ? entry : entry?.route;
     const view = typeof entry === "string" ? {} : entry?.view || {};
     if (route === ROUTES.calendar && view.workspace === "intervention-search") return openInterventionSearch();
+    if (route === ROUTES.calendar && view.workspace === "reminders") return renderMobileReminders();
     if (route === ROUTES.calendar && view.calendarEventId) return renderCalendar({ date: view.calendarDate ? new Date(`${view.calendarDate}T12:00:00`) : new Date(), eventId: view.calendarEventId });
     if (route === ROUTES.calendar) return openCalendar();
     if (route === ROUTES.operationsMap) return renderOperationsMap();
@@ -718,12 +720,7 @@ function initializeMobileWorkspaceMenu() {
     drawer.addEventListener("click", event => {
         if (event.target.closest("[data-mobile-reminders]")) {
             close();
-            if (isMobileAdministrator() && canAccessReminderDashboard(document.body.dataset)) {
-                void renderHome();
-                const reminders = document.querySelector("[data-dashboard-reminders]");
-                reminders?.focus({ preventScroll: true });
-                reminders?.scrollIntoView({ block: "start" });
-            }
+            renderMobileReminders();
             return;
         }
         const action = event.target.closest("[data-mobile-quick-action]");
@@ -749,7 +746,7 @@ function renderMobileWorkspaceFolders(container, quickActions) {
     ];
     container.innerHTML = groups.map(([title, ids], index) => {
         const actions = ids.map(id => quickActions.querySelector(`#${id}`)).filter(Boolean);
-        const reminders = title === "Interventions" && isMobileAdministrator() && canAccessReminderDashboard(document.body.dataset)
+        const reminders = title === "Interventions" && canAccessReminderDashboard(document.body.dataset)
             ? '<button type="button" data-mobile-reminders>Rappels internes</button>' : "";
         if (!actions.length && !reminders) return "";
         return `<details class="mobile-workspace-folder" ${index === 0 ? "open" : ""}><summary>${escapeHtml(title)}<span>${actions.length + (reminders ? 1 : 0)}</span></summary><div>${actions.map(button => `<button type="button" data-mobile-quick-action="${escapeHtml(button.id)}">${button.innerHTML}</button>`).join("")}${reminders}</div></details>`;
@@ -1294,7 +1291,7 @@ async function renderHome() {
     const calendarEnabled = canAccessRoute(ROUTES.calendar);
     const desktopDashboard = isDesktopDevice();
     const mobileRevenueEnabled = isMobileDeviceContext() && ["mobile_admin", "team_lead", "technician"].includes(document.body.dataset.role);
-    const remindersEnabled = canAccessReminderDashboard(document.body.dataset);
+    const remindersEnabled = !isMobileDeviceContext() && canAccessReminderDashboard(document.body.dataset);
     if (!calendarEnabled && !desktopDashboard && !mobileRevenueEnabled) {
         document.body.dataset.pageMode = "basic-home";
         renderPlatformAnnouncement(container);
@@ -2626,6 +2623,23 @@ function renderSupportContact(container) {
 
 function supportAssistanceFields() {
     return `<fieldset class="support-assistance-choice"><legend>Assistance souhaitée (facultatif)</legend><label>Mode d’assistance<select name="assistancePreference"><option value="">Ticket uniquement, sans demande d’assistance</option><option value="diagnostic">Diagnostic en lecture seule</option><option value="control">Prise en main sécurisée</option></select></label><p class="muted">Ce choix n’autorise aucun accès. Si le Support propose une session, un Poste Admin de votre entreprise devra l’accepter séparément. L’accès restera temporaire et révocable.</p></fieldset>`;
+}
+
+function renderMobileReminders() {
+    if (!canAccessReminderDashboard(document.body.dataset)) return openHome();
+    clearSearch();
+    resetSelection("all");
+    setPage("Rappels internes", ROUTES.calendar, "detail");
+    const calendarEnabled = canAccessRoute(ROUTES.calendar);
+    const container = getContainer();
+    const panel = document.createElement("section");
+    panel.className = "client-panel home-panel dashboard-panel";
+    panel.innerHTML = reminderDashboardMarkup();
+    container.appendChild(panel);
+    mountReminderDashboard(panel.querySelector("[data-dashboard-reminders]"), {
+        openResources: canAccessRoute(ROUTES.businessSuite) ? options => renderBusinessSuite(options) : null,
+        openPlanning: calendarEnabled ? date => renderCalendar({ date: new Date(`${date}T12:00:00`) }) : null
+    });
 }
 
 function renderMobileSupportTicket() {

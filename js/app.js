@@ -2,7 +2,7 @@ import { initializeAuthentication, restoreApplicationShell, signOut } from "./au
 import { initializeClientSynchronization } from "./client-sync.js?v=133";
 import { initializeCollaboration } from "./collaboration.js?v=14";
 import { loadDatabase } from "./data.js?v=59";
-import { initializeNavigation, refreshApplication, synchronizeActiveCompanyIdentity } from "./navigation.js?v=556";
+import { initializeNavigation, refreshApplication, synchronizeActiveCompanyIdentity } from "./navigation.js?v=557";
 import { updateDesktopGreeting } from "./desktop-greeting.js?v=1";
 import { getActiveCompanyId, getSessionDisplayName, sessionAccessIdentity } from "./session-context.js?v=1";
 import { renderError } from "./ui.js?v=44";

@@ -36,16 +36,21 @@ test("l’activation manuelle propose uniquement les trois catégories choisies"
     assert.match(markup, /aucune intervention n’est créée ou modifiée automatiquement/);
 });
 
-test("le tableau de bord reste préchargé et accessible depuis le menu Admin Mobile", () => {
+test("les rappels quittent l’Accueil mobile et restent accessibles depuis le menu mobile", () => {
     const navigation = readFileSync(new URL("../js/navigation.js", import.meta.url), "utf8");
     const worker = readFileSync(new URL("../service-worker.js", import.meta.url), "utf8");
     const resources = readFileSync(new URL("../js/business-suite.js", import.meta.url), "utf8");
-    assert.match(navigation, /canAccessReminderDashboard\(document\.body\.dataset\)/);
-    assert.match(navigation, /mountReminderDashboard/);
-    assert.match(navigation, /openPlanning: calendarEnabled/);
-    assert.match(navigation, /isMobileAdministrator\(\) && canAccessReminderDashboard\(document\.body\.dataset\)/);
+    const renderHome = navigation.slice(navigation.indexOf("async function renderHome()"), navigation.indexOf("function renderDashboardStickyNotes()"));
+    const reminderView = navigation.slice(navigation.indexOf("function renderMobileReminders()"), navigation.indexOf("function renderMobileSupportTicket()"));
+    assert.match(renderHome, /const remindersEnabled = !isMobileDeviceContext\(\) && canAccessReminderDashboard\(document\.body\.dataset\)/);
+    assert.match(reminderView, /setPage\("Rappels internes", ROUTES\.calendar, "detail"\)/);
+    assert.match(reminderView, /reminderDashboardMarkup\(\)/);
+    assert.match(reminderView, /mountReminderDashboard/);
+    assert.match(reminderView, /openPlanning: calendarEnabled/);
+    assert.match(navigation, /title === "Interventions" && canAccessReminderDashboard\(document\.body\.dataset\)/);
     assert.match(navigation, /data-mobile-reminders>Rappels internes/);
-    assert.match(navigation, /reminders\?\.focus/);
+    assert.match(navigation, /\[data-mobile-reminders\]"\)\) \{\s*close\(\);\s*renderMobileReminders\(\);/);
+    assert.match(navigation, /view\.workspace === "reminders"\) return renderMobileReminders\(\)/);
     assert.match(worker, /reminder-dashboard\.js\?v=2/);
     assert.match(resources, /data-contract-schedule/);
     assert.match(resources, /data-item-threshold/);
