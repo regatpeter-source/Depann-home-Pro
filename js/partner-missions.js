@@ -488,7 +488,7 @@ async function showDetail(id) {
 async function openPartnerMissionPlanning(mission) {
     const clientDecision = await reviewEmailMissionClient(mission);
     if (!clientDecision) return;
-    const { renderCalendar } = await import("./calendar.js?v=253");
+    const { renderCalendar } = await import("./calendar.js?v=254");
     const data = mission.mappedData || {};
     const draft = mission.planningDraft || {};
     const hasDraft = Boolean(draft.pausedAt);

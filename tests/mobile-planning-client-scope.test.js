@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { canModifyCalendarEvent } from "../server/calendar.js";
+import { calendarEventOrigin, canManageCalendarSchedule, canModifyCalendarEvent } from "../server/calendar.js";
 import { canEditAssignedClients, hasAdministrativeClientAssignment, hasAssignedClientScope, isDedicatedMobileSession } from "../server/mobile-client-access.js";
 import { getLocalClients, saveLocalClient, synchronizeClients } from "../js/client-sync.js";
 
@@ -14,6 +14,30 @@ test("un poste mobile ne modifie que les rendez-vous qu’il a lui-même créés
     assert.equal(canModifyCalendarEvent(authorizedTechnician, { createdBy: "7", createdDeviceType: "mobile" }), false);
     assert.equal(canModifyCalendarEvent(authorizedTechnician, { createdBy: "42", createdDeviceType: "desktop" }), false);
     assert.equal(canModifyCalendarEvent({ ...authorizedTechnician, deviceType: "desktop" }, { createdBy: "7", createdDeviceType: "desktop" }), true);
+});
+
+test("le Poste Admin Mobile planifie comme un poste PC et crée des rendez-vous administratifs", () => {
+    const mobileAdministrator = { sub: "9", role: "mobile_admin", deviceType: "mobile", canManageCalendar: false };
+    assert.equal(canManageCalendarSchedule(mobileAdministrator), true);
+    assert.equal(canModifyCalendarEvent(mobileAdministrator, { createdBy: "7", createdDeviceType: "desktop" }), true);
+    assert.equal(canModifyCalendarEvent(mobileAdministrator, { createdBy: "42", createdDeviceType: "mobile" }), true);
+    assert.equal(calendarEventOrigin(mobileAdministrator), "desktop");
+    assert.equal(calendarEventOrigin({ sub: "1", role: "admin", deviceType: "mobile" }), "desktop");
+    assert.equal(calendarEventOrigin(authorizedTechnician), "mobile");
+    assert.equal(calendarEventOrigin({ ...authorizedTechnician, role: "team_lead" }), "mobile");
+
+    const server = read("server/calendar.js");
+    assert.match(server, /request\.user\.sub, calendarEventOrigin\(request\.user\)/);
+    assert.doesNotMatch(server, /request\.user\.sub, request\.user\.deviceType/);
+
+    const client = read("js/calendar.js");
+    assert.match(client, /function hasRestrictedMobileCalendar\(\) \{\s*return isDedicatedMobileCalendar\(\) && !isMobileAdministrator\(\)/);
+    assert.match(client, /data-calendar-mobile-date="\$\{date\}"/);
+    assert.match(client, /closest\("\[data-calendar-event\], \[data-calendar-mobile-add\]"\)\) return;\s*selectedEvent = newEventForDate\(day\.dataset\.calendarMobileDate\)/);
+
+    const migration = read("database/migrations/0045_mobile_admin_appointment_origin.sql");
+    assert.match(migration, /SET created_device_type = 'desktop'/);
+    assert.match(migration, /role IN \('admin', 'mobile_admin'\)/);
 });
 
 test("le droit Planning ouvre l’édition des clients attribués sans élargir les rôles mobiles", () => {

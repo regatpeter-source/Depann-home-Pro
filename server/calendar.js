@@ -443,7 +443,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 AND event.event_status='paused'
                 AND ($2::boolean OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=event.id AND assignment.technician_id=$3::bigint))
             ORDER BY event.paused_at ASC,event.event_date,event.start_time NULLS LAST
-        `, [getAccountOwnerId(request), canManageCalendarSchedule(request.user) && !isDedicatedMobileSession(request.user), request.user.sub]);
+        `, [getAccountOwnerId(request), canManageCalendarSchedule(request.user) && !hasRestrictedMobileCalendar(request.user), request.user.sub]);
         response.json({ events: rows });
     }));
 
@@ -555,7 +555,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                         (owner_id, assigned_technician_id, title, client_id, client_name, location, event_date, start_time, end_time, color, event_type, event_status, event_origin, notes, planning_batch_id, created_by, created_device_type)
                     VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8::time, $9::time, $10, $11, $12, 'standard', $13, $14::uuid, $15, $16)
                     RETURNING id
-                `, [getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, await resolveClientId(connection, getAccountOwnerId(request), event.clientName, true), event.clientName, event.location, date, optionalTime(event.startTime), optionalTime(event.endTime), event.color, event.eventType, event.status, event.notes, planningBatchId, request.user.sub, request.user.deviceType]);
+                `, [getAccountOwnerId(request), event.assignedTechnicianId || null, event.title, await resolveClientId(connection, getAccountOwnerId(request), event.clientName, true), event.clientName, event.location, date, optionalTime(event.startTime), optionalTime(event.endTime), event.color, event.eventType, event.status, event.notes, planningBatchId, request.user.sub, calendarEventOrigin(request.user)]);
                 await replaceEventAssignments(connection, rows[0].id, event.assignedTechnicianIds, event.assignedTechnicianId);
                 ids.push(rows[0].id);
             }
@@ -654,7 +654,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 WHERE event.id=$1 AND event.owner_id=$2 AND event.event_type='appointment'
                     AND ($3::boolean OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=event.id AND assignment.technician_id=$4))
                 FOR UPDATE
-            `, [id, ownerId, canManageCalendarSchedule(request.user) && !isDedicatedMobileSession(request.user), request.user.sub]);
+            `, [id, ownerId, canManageCalendarSchedule(request.user) && !hasRestrictedMobileCalendar(request.user), request.user.sub]);
             const event = rows[0];
             if (!event) { await connection.query("ROLLBACK"); return response.status(404).json({ message: "Intervention introuvable ou non autorisée." }); }
             if (!canModifyCalendarEvent(request.user, event)) { await connection.query("ROLLBACK"); return response.status(403).json({ message: "Cette intervention a été créée par un poste administratif et ne peut pas être mise en pause depuis un poste mobile." }); }
@@ -712,7 +712,7 @@ export function registerCalendarRoutes(app, requireAuthentication) {
                 WHERE event.id=$1 AND event.owner_id=$2 AND event.event_type='appointment'
                     AND ($3::boolean OR EXISTS (SELECT 1 FROM depannhome_calendar_assignments assignment WHERE assignment.event_id=event.id AND assignment.technician_id=$4))
                 FOR UPDATE
-            `, [id, ownerId, canManageCalendarSchedule(request.user) && !isDedicatedMobileSession(request.user), request.user.sub]);
+            `, [id, ownerId, canManageCalendarSchedule(request.user) && !hasRestrictedMobileCalendar(request.user), request.user.sub]);
             const source = rows[0];
             if (!source) { await connection.query("ROLLBACK"); return response.status(404).json({ message: "Intervention introuvable ou non autorisée." }); }
             if (!canModifyCalendarEvent(request.user, source)) { await connection.query("ROLLBACK"); return response.status(403).json({ message: "Cette intervention a été créée par un poste administratif et ne peut pas être replanifiée depuis un poste mobile." }); }
@@ -1139,17 +1139,27 @@ function requireCalendarCreateAccess(request, response, next) {
 
 export function canManageCalendarSchedule(user) {
     if (user?.role === "accountant" || isCommercialMobile(user)) return false;
-    if (["mobile_admin", "team_lead", "technician"].includes(user?.role)) return user.canManageCalendar === true;
-    return ["admin", "pc_standard", "commercial"].includes(user?.role);
+    if (["team_lead", "technician"].includes(user?.role)) return user.canManageCalendar === true;
+    return ["admin", "pc_standard", "commercial", "mobile_admin"].includes(user?.role);
+}
+
+// Le Poste Admin Mobile gère le planning comme un poste administratif ; chefs d’équipe et techniciens mobiles restent limités à leurs propres rendez-vous.
+function hasRestrictedMobileCalendar(user) {
+    return isDedicatedMobileSession(user) && user?.role !== "mobile_admin";
+}
+
+// Les rendez-vous d’un poste administratif, y compris mobile, ouvrent la fiche client aux membres affectés.
+export function calendarEventOrigin(user) {
+    return hasRestrictedMobileCalendar(user) ? "mobile" : "desktop";
 }
 
 export function canModifyCalendarEvent(user, event) {
-    if (!isDedicatedMobileSession(user)) return true;
+    if (!hasRestrictedMobileCalendar(user)) return true;
     return event?.createdDeviceType === "mobile" && String(event?.createdBy || "") === String(user?.sub || "");
 }
 
 async function canModifyStoredCalendarEvent(user, ownerId, eventId) {
-    if (!isDedicatedMobileSession(user)) return true;
+    if (!hasRestrictedMobileCalendar(user)) return true;
     const { rows } = await getPool().query("SELECT created_by AS \"createdBy\",created_device_type AS \"createdDeviceType\" FROM depannhome_calendar_events WHERE owner_id=$1 AND id=$2", [ownerId, eventId]);
     return canModifyCalendarEvent(user, rows[0]);
 }

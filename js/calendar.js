@@ -1,10 +1,10 @@
 import { ROUTES } from "./config.js?v=134";
-import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=230";
+import { createBillingDocumentForClient, viewBillingDocument } from "./billing.js?v=231";
 import { getSearchableClients } from "./clients.js?v=189";
 import { addClientActivityByName, synchronizeClients } from "./client-sync.js?v=133";
 import { markDesktopWorkspaceDraftSaved } from "./desktop-workspace.js?v=6";
 import { renderClientMessages } from "./messages.js?v=107";
-import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=75";
+import { renderLeakReportWizard as renderTechnicalReports } from "./leak-report-wizard.js?v=76";
 import { resetSelection } from "./state.js?v=44";
 import { escapeHtml, normalizeText } from "./utils.js?v=44";
 import { renderPlatformAnnouncement } from "./platform-announcement.js?v=1";
@@ -953,18 +953,22 @@ function canRequestInterventionPause(event) {
 
 function canManageCalendarSchedule() {
     const role = document.body.dataset.role;
-    if (["mobile_admin", "team_lead", "technician"].includes(role)) return document.body.dataset.canManageCalendar === "true";
-    return ["admin", "pc_standard", "commercial"].includes(role) && !isCommercialMobileCalendar();
+    if (["team_lead", "technician"].includes(role)) return document.body.dataset.canManageCalendar === "true";
+    return ["admin", "pc_standard", "commercial", "mobile_admin"].includes(role) && !isCommercialMobileCalendar();
 }
 
 function canEditCalendarEvent(event) {
     if (!canManageCalendarSchedule()) return false;
-    if (!event?.id || !isDedicatedMobileCalendar()) return true;
+    if (!event?.id || !hasRestrictedMobileCalendar()) return true;
     return event.createdDeviceType === "mobile" && String(event.createdBy || "") === String(document.body.dataset.userId || "");
 }
 
 function isDedicatedMobileCalendar() {
     return document.body.dataset.deviceType === "mobile" && ["mobile_admin", "team_lead", "technician"].includes(document.body.dataset.role);
+}
+
+function hasRestrictedMobileCalendar() {
+    return isDedicatedMobileCalendar() && !isMobileAdministrator();
 }
 
 function formatPauseDate(value) {
@@ -1820,7 +1824,7 @@ function renderMobileCalendarAgenda(panel) {
                 const isToday = date === today;
                 const weekday = capitalize(new Intl.DateTimeFormat("fr-FR", { weekday: "short" }).format(day).replace(".", ""));
                 const fullDate = capitalize(new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(day));
-                return `<section class="calendar-mobile-agenda-day${isToday ? " today" : ""}${dayEvents.length ? " has-events" : " is-empty"}">
+                return `<section class="calendar-mobile-agenda-day${isToday ? " today" : ""}${dayEvents.length ? " has-events" : " is-empty"}"${canCreate ? ` data-calendar-mobile-date="${date}"` : ""}>
                     <header class="calendar-mobile-day-heading">
                         <time datetime="${date}" class="calendar-mobile-date"><span>${escapeHtml(weekday)}</span><strong>${day.getDate()}</strong></time>
                         <div><p>${isToday ? "Aujourd’hui" : escapeHtml(fullDate)}</p><small>${dayEvents.length ? `${dayEvents.length} rendez-vous` : "Aucun rendez-vous"}</small></div>
@@ -1829,7 +1833,7 @@ function renderMobileCalendarAgenda(panel) {
                     ${dayEvents.length ? `<div class="calendar-mobile-agenda-events">${dayEvents.map(event => {
                         const client = getEventClientDetails(event);
                         return `<button type="button" class="${calendarEventClassName(event, "calendar-mobile-agenda-event")}" data-calendar-event="${escapeHtml(event.id)}" data-calendar-status="${calendarEventStatus(event)}" aria-label="${escapeHtml(calendarEventAccessibleLabel(event, client, date))}">${renderCalendarEventCard(event, client)}<span class="calendar-mobile-event-arrow" aria-hidden="true">›</span></button>`;
-                    }).join("")}</div>` : `<p class="calendar-mobile-empty">${canCreate ? "Créneau libre · touchez + pour planifier" : "Aucune intervention prévue"}</p>`}
+                    }).join("")}</div>` : `<p class="calendar-mobile-empty">${canCreate ? "Créneau libre · touchez le jour pour planifier" : "Aucune intervention prévue"}</p>`}
                 </section>`;
             }).join("")}
         </div>`;
@@ -1840,6 +1844,11 @@ function renderMobileCalendarAgenda(panel) {
     }));
     panel.querySelectorAll("[data-calendar-mobile-add]").forEach(button => button.addEventListener("click", () => {
         selectedEvent = newEventForDate(button.dataset.calendarMobileAdd);
+        refreshCalendarDetail();
+    }));
+    panel.querySelectorAll("[data-calendar-mobile-date]").forEach(day => day.addEventListener("click", eventClick => {
+        if (eventClick.target.closest("[data-calendar-event], [data-calendar-mobile-add]")) return;
+        selectedEvent = newEventForDate(day.dataset.calendarMobileDate);
         refreshCalendarDetail();
     }));
 }
@@ -2073,7 +2082,7 @@ function canAccessQuitus() {
 function isReadOnlyCalendar() {
     const role = document.body.dataset.role;
     return role === "accountant"
-        || ["mobile_admin", "team_lead", "technician"].includes(role) && document.body.dataset.canManageCalendar !== "true"
+        || ["team_lead", "technician"].includes(role) && document.body.dataset.canManageCalendar !== "true"
         || isCommercialMobileCalendar();
 }
 

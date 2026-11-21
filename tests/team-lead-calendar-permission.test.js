@@ -12,7 +12,7 @@ test("le droit unique contrôle la création et la modification du planning", ()
     assert.equal(canManageCalendarSchedule({ role: "technician", canManageCalendar: true }), true);
     assert.equal(canManageCalendarSchedule({ role: "technician", canManageCalendar: false }), false);
     assert.equal(canManageCalendarSchedule({ role: "mobile_admin", canManageCalendar: true }), true);
-    assert.equal(canManageCalendarSchedule({ role: "mobile_admin", canManageCalendar: false }), false);
+    assert.equal(canManageCalendarSchedule({ role: "mobile_admin", canManageCalendar: false }), true);
     assert.equal(canManageCalendarSchedule({ role: "commercial", deviceType: "mobile", canManageCalendar: true }), false);
     assert.equal(canManageCalendarSchedule({ role: "commercial", deviceType: "desktop" }), true);
     assert.equal(canManageCalendarSchedule({ role: "admin" }), true);
@@ -33,7 +33,7 @@ test("les migrations conservent l’accès des responsables mobiles existants", 
 test("les nouveaux postes mobiles démarrent sans droit sauf autorisation explicite", () => {
     const auth = read("server/auth.js");
     const database = read("server/database.js");
-    assert.match(auth, /const MOBILE_CALENDAR_ROLES = new Set\(\[MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"\]\)/);
+    assert.match(auth, /const MOBILE_CALENDAR_ROLES = new Set\(\[TEAM_LEAD_ROLE, "technician"\]\)/);
     assert.match(auth, /const canManageCalendar = MOBILE_CALENDAR_ROLES\.has\(role\) && request\.body\?\.canManageCalendar === true/);
     assert.match(database, /canManageCalendar = false/);
     assert.match(auth, /can_manage_calendar = FALSE/);
@@ -45,19 +45,19 @@ test("le droit circule dans les sessions et l’administration des membres", () 
     const sessionContext = read("js/session-context.js");
     const navigation = read("js/navigation.js");
     assert.match(auth, /can_manage_calendar AS "canManageCalendar"/);
-    assert.match(auth, /canManageCalendar: MOBILE_CALENDAR_ROLES\.has\(user\.role\)/);
+    assert.match(auth, /canManageCalendar: user\.role === MOBILE_ADMIN_ROLE \|\| MOBILE_CALENDAR_ROLES\.has\(user\.role\)/);
     assert.match(auth, /can_manage_calendar = \$9/);
     assert.match(application, /dataset\.canManageCalendar = user\.canManageCalendar \? "true" : "false"/);
     assert.match(sessionContext, /canManageCalendar: user\?\.canManageCalendar === true/);
     assert.match(navigation, /name="canManageCalendar"/);
-    assert.match(navigation, /\["mobile_admin", "technician", "team_lead"\]\.includes\(roleInput\.value\)/);
+    assert.match(navigation, /values\.canManageCalendar = \["technician", "team_lead"\]\.includes\(roleInput\.value\)/);
     assert.match(navigation, /Autoriser la gestion du planning/);
 });
 
 test("un poste mobile sans droit conserve la réalisation sans pouvoir replanifier", () => {
     const client = read("js/calendar.js");
     const server = read("server/calendar.js");
-    assert.match(client, /\["mobile_admin", "team_lead", "technician"\]\.includes\(role\) && document\.body\.dataset\.canManageCalendar !== "true"/);
+    assert.match(client, /\["team_lead", "technician"\]\.includes\(role\) && document\.body\.dataset\.canManageCalendar !== "true"/);
     assert.match(client, /canManageCalendarSchedule\(\) && canEditCalendarEvent\(event\)/);
     assert.match(client, /isDedicatedMobileCalendar\(\).*!canEditCalendarEvent\(event\)/s);
     assert.match(server, /if \(!canManageCalendarSchedule\(request\.user\)\) return response\.status\(403\).*replanification/);

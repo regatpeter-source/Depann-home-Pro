@@ -28,8 +28,8 @@ const MOBILE_ADMIN_ROLE = "mobile_admin";
 const STANDARD_PC_ROLE = "pc_standard";
 const COMMERCIAL_ROLE = "commercial";
 const TEAM_LEAD_ROLE = "team_lead";
-const MOBILE_CALENDAR_ROLES = new Set([MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"]);
-const MOBILE_ONBOARDING_ROLES = new Set([...MOBILE_CALENDAR_ROLES, COMMERCIAL_ROLE]);
+const MOBILE_CALENDAR_ROLES = new Set([TEAM_LEAD_ROLE, "technician"]);
+const MOBILE_ONBOARDING_ROLES = new Set([MOBILE_ADMIN_ROLE, ...MOBILE_CALENDAR_ROLES, COMMERCIAL_ROLE]);
 const PC_SESSION_ROLES = new Set(["admin", STANDARD_PC_ROLE, COMMERCIAL_ROLE, "accountant"]);
 const WORKSTATION_TOTP_ROLES = new Set(["admin", STANDARD_PC_ROLE, COMMERCIAL_ROLE]);
 const CREATABLE_MEMBER_ROLES = new Set(["admin", STANDARD_PC_ROLE, COMMERCIAL_ROLE, MOBILE_ADMIN_ROLE, TEAM_LEAD_ROLE, "technician"]);
@@ -909,7 +909,7 @@ export async function authenticateRequest(request, response, next) {
             department: user.department || "",
             departments: cleanDepartments(user.departments, user.department),
             technicianBillingEnabled: user.can_create_billing !== false,
-            canManageCalendar: MOBILE_CALENDAR_ROLES.has(user.role) && user.can_manage_calendar === true,
+            canManageCalendar: user.role === MOBILE_ADMIN_ROLE || MOBILE_CALENDAR_ROLES.has(user.role) && user.can_manage_calendar === true,
             canAccessBilling: device.device_type !== "mobile" && (user.role === "admin" || user.can_access_billing === true),
             canAccessAccounting: device.device_type !== "mobile" && (user.role === "admin" || user.can_access_accounting === true),
             canAccessCompanyEmail: hasCompanyEmailWorkspaceAccess({ ...user, organization, deviceType: device.device_type }),
@@ -1447,7 +1447,7 @@ function publicUser(user) {
         department: user.department || "",
         departments: cleanDepartments(user.departments, user.department),
         technicianBillingEnabled: (user.can_create_billing ?? user.technicianBillingEnabled) !== false,
-        canManageCalendar: MOBILE_CALENDAR_ROLES.has(user.role) && (user.can_manage_calendar ?? user.canManageCalendar) === true,
+        canManageCalendar: user.role === MOBILE_ADMIN_ROLE || MOBILE_CALENDAR_ROLES.has(user.role) && (user.can_manage_calendar ?? user.canManageCalendar) === true,
         canAccessBilling: (user.deviceType || user.device_type || "desktop") !== "mobile" && (user.role === "admin" || (user.can_access_billing ?? user.canAccessBilling) === true),
         canAccessAccounting: (user.deviceType || user.device_type || "desktop") !== "mobile" && (user.role === "admin" || (user.can_access_accounting ?? user.canAccessAccounting) === true),
         canAccessCompanyEmail: (user.can_access_company_email ?? user.canAccessCompanyEmail) === true || ["admin", "mobile_admin"].includes(user.role) && ["basic_plus", "pro"].includes(user.organization?.subscriptionTier || user.subscription_tier),
