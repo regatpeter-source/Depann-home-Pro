@@ -106,8 +106,8 @@ test("le bandeau fixe suit la session et recharge avant un changement d’entrep
     assert.match(html, /id="desktopGreetingName" data-no-translate/);
     assert.match(html, /id="desktopGreetingCompany" data-no-translate/);
     assert.match(style, /\.desktop-greeting\{\s*display:none/);
-    assert.match(style, /body\.desktop-device \.desktop-greeting:not\(\[hidden\]\)\{[\s\S]*?font-size:clamp\(20px/);
-    assert.match(style, /--desktop-header-height:102px/);
+    assert.match(style, /body\.desktop-device \.desktop-greeting:not\(\[hidden\]\)\{[\s\S]*?justify-content:center;[\s\S]*?margin:-7px -16px 7px;[\s\S]*?background:#0A5C36;\s*color:#fff;/);
+    assert.match(style, /--desktop-header-height:98px/);
     assert.match(style, /body\.desktop-device #authRoot\{[\s\S]*grid-template-rows:var\(--desktop-header-height\)/);
     assert.match(style, /body\.desktop-device\[data-support-control="true"\] #authRoot\{[\s\S]*?height:auto/);
     assert.match(style, /body\.desktop-device \.user-session\{[\s\S]*?min-width:0/);
@@ -129,7 +129,7 @@ test("l’application PC installée peut centrer le bandeau dans la barre de tit
     assert.deepEqual(manifest.display_override, ["window-controls-overlay"]);
     assert.match(html, /<body class="auth-pending">\s*<div class="app-titlebar" aria-hidden="true" data-no-translate>Depann'Home Pro<\/div>\s*<div id="authRoot">/);
     assert.match(style, /\.app-titlebar\{\s*display:none/);
-    assert.match(overlay, /\.app-titlebar,\s*body\.desktop-device \.desktop-greeting:not\(\[hidden\]\)\{[\s\S]*?position:fixed;[\s\S]*?justify-content:center;[\s\S]*?padding:0 var\(--app-titlebar-inset\);[\s\S]*?background:#0A5C36;[\s\S]*?app-region:drag;/);
+    assert.match(overlay, /\.app-titlebar,\s*body\.desktop-device \.desktop-greeting:not\(\[hidden\]\)\{[\s\S]*?position:fixed;[\s\S]*?justify-content:center;[\s\S]*?margin:0;\s*padding:0 var\(--app-titlebar-inset\);[\s\S]*?background:#0A5C36;[\s\S]*?app-region:drag;/);
     assert.match(overlay, /--app-titlebar-inset:max\(env\(titlebar-area-x,0px\),calc\(100vw - env\(titlebar-area-x,0px\) - env\(titlebar-area-width,100vw\)\)\)/);
     assert.match(overlay, /body\.desktop-device\{\s*--desktop-header-height:64px;/);
     assert.match(overlay, /body\.desktop-device #authRoot\{\s*height:calc\(100vh - var\(--app-titlebar-height\)\);/);

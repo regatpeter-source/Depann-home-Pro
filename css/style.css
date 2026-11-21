@@ -6785,7 +6785,7 @@ footer{
 ========================== */
 body.desktop-device{
     --desktop-sidebar-width:216px;
-    --desktop-header-height:102px;
+    --desktop-header-height:98px;
     --desktop-radius:7px;
     --primary:#2f607d;
     --secondary:#4f806f;
@@ -6837,16 +6837,22 @@ body.desktop-device .topbar{
     box-shadow:0 1px 4px rgba(15,23,42,.08);
 }
 
+/* Bande verte collée sous la barre de titre (#0A5C36 = theme_color) : elle la prolonge sur tous les PC,
+   sans dépendre du mode « Masquer la barre de titre » de l'application installée. */
 body.desktop-device .desktop-greeting:not([hidden]){
     display:flex;
     align-items:center;
+    justify-content:center;
     gap:.4em;
-    height:38px;
+    height:34px;
     min-width:0;
+    margin:-7px -16px 7px;
+    padding:0 16px;
     overflow:hidden;
-    color:var(--text);
-    font-size:clamp(20px,1.8vw,25px);
-    font-weight:700;
+    background:#0A5C36;
+    color:#fff;
+    font-size:16px;
+    font-weight:600;
     line-height:1.2;
     white-space:nowrap;
 }
@@ -6891,6 +6897,7 @@ body.desktop-device .desktop-greeting-company:not([hidden]){
         justify-content:center;
         gap:.4em;
         height:var(--app-titlebar-height);
+        margin:0;
         padding:0 var(--app-titlebar-inset);
         overflow:hidden;
         background:#0A5C36;
